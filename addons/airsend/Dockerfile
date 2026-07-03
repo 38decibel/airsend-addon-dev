@@ -17,9 +17,17 @@ RUN mkdir -p /opt/airsend && cd /opt/airsend && \
     rm AirSendWebService.tgz && \
     chmod -R 777 bin
 
-# Dependances Python
+# Dependances Python.
+# aiohttp n'a plus de wheel precompile pour i386 (32 bits) depuis des annees
+# (arret cote projet aiohttp) - contrairement a amd64/aarch64/armhf/armv7 qui
+# ont bien un wheel pret pour la version Python de cette image. On installe
+# donc une chaine de compilation C en "virtual package" le temps du pip
+# install (sert de fallback source-build sur i386 uniquement), puis on la
+# retire pour ne pas alourdir l'image finale sur les autres architectures.
 COPY rootfs/app/requirements.txt /app/requirements.txt
-RUN pip install --no-cache-dir --break-system-packages -r /app/requirements.txt
+RUN apk add --no-cache --virtual .build-deps gcc musl-dev python3-dev libffi-dev \
+    && pip install --no-cache-dir --break-system-packages -r /app/requirements.txt \
+    && apk del .build-deps
 
 COPY rootfs/app /app
 COPY run.sh /
