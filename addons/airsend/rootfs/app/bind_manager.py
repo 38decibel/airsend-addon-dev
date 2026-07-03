@@ -1,0 +1,112 @@
+"""
+Cycle de vie du "bind" RF par box.
+
+Decision actee : UN SEUL bind permanent et large par box (pas de "channel"
+dans le body => ecoute globale), renouvele avant expiration. Le filtrage par
+appareil connu se fait cote callback_server.py sur (channel.id, channel.source),
+pas ici. Ca evite le compromis latence/nombre-d'appareils d'un bind en
+round-robin façon Jeedom (cf. discussion Phase 1).
+"""
+
+from __future__ import annotations
+
+import asyncio
+import logging
+
+from airsend_client import AirSendClient, AirSendError, BoxConfig
+
+_LOGGER = logging.getLogger("airsend.bind_manager")
+
+# Marge de securite avant expiration du bind pour lancer le renouvellement.
+# Un bind de 3600s sera renouvele des 3300s (60s de marge, avec le min() ci-dessous
+# pour rester raisonnable si jamais duration est tres courte en test).
+_RENEW_MARGIN_S = 60.0
+_BIND_DURATION_S = 3600.0
+
+
+class BoxBindHandle:
+    """Represente le bind actif (ou en cours de (re)tentative) pour une box."""
+
+    def __init__(self, client: AirSendClient, box: BoxConfig, callback_base_url: str) -> None:
+        self._client = client
+        self.box = box
+        self._callback_url = f"{callback_base_url.rstrip('/')}/cb/{box.slug}"
+        self._task: asyncio.Task | None = None
+        self._stopped = asyncio.Event()
+
+    @property
+    def callback_url(self) -> str:
+        return self._callback_url
+
+    def start(self) -> None:
+        if self._task is not None:
+            return
+        self._stopped.clear()
+        self._task = asyncio.create_task(self._run(), name=f"bind-{self.box.slug}")
+
+    async def stop(self) -> None:
+        self._stopped.set()
+        if self._task is not None:
+            self._task.cancel()
+            try:
+                await self._task
+            except asyncio.CancelledError:
+                pass
+            self._task = None
+        try:
+            await self._client.unbind(self.box)
+        except AirSendError as exc:
+            _LOGGER.debug("unbind failed for box %s (probably already unbound): %s", self.box.name, exc)
+
+    async def _run(self) -> None:
+        """Boucle de (re)bind avec backoff simple en cas d'echec (box offline,
+        mot de passe invalide, etc.) - ne doit jamais planter tout le process."""
+        backoff = 5.0
+        while not self._stopped.is_set():
+            try:
+                _LOGGER.info(
+                    "Binding box '%s' (callback=%s, duration=%ss)",
+                    self.box.name,
+                    self._callback_url,
+                    _BIND_DURATION_S,
+                )
+                await self._client.bind(
+                    self.box,
+                    callback_url=self._callback_url,
+                    duration=_BIND_DURATION_S,
+                )
+                backoff = 5.0  # succes => on reset le backoff pour la prochaine erreur eventuelle
+                sleep_for = max(_BIND_DURATION_S - _RENEW_MARGIN_S, 5.0)
+                await asyncio.sleep(sleep_for)
+            except asyncio.CancelledError:
+                raise
+            except AirSendError as exc:
+                _LOGGER.warning(
+                    "Bind failed for box '%s' (%s) - retrying in %.0fs",
+                    self.box.name,
+                    exc,
+                    backoff,
+                )
+                await asyncio.sleep(backoff)
+                backoff = min(backoff * 2, 300.0)  # backoff exponentiel plafonne a 5 min
+
+
+class BindManager:
+    """Orchestre un BoxBindHandle par box configuree."""
+
+    def __init__(self, client: AirSendClient, callback_base_url: str) -> None:
+        self._client = client
+        self._callback_base_url = callback_base_url
+        self._handles: dict[str, BoxBindHandle] = {}
+
+    def add_box(self, box: BoxConfig) -> BoxBindHandle:
+        handle = BoxBindHandle(self._client, box, self._callback_base_url)
+        self._handles[box.slug] = handle
+        handle.start()
+        return handle
+
+    def get_handle(self, box_slug: str) -> BoxBindHandle | None:
+        return self._handles.get(box_slug)
+
+    async def stop_all(self) -> None:
+        await asyncio.gather(*(h.stop() for h in self._handles.values()), return_exceptions=True)

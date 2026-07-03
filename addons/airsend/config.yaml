@@ -1,0 +1,56 @@
+name: AirSend
+description: Connect your AirSend / AirSend Duo boxes to Home Assistant (RF cover/switch/button/sensor via MQTT discovery)
+version: "0.1.0"
+slug: airsend
+url: https://github.com/<votre_org>/hass_airsend-addon
+arch:
+  - aarch64
+  - amd64
+  - armhf
+  - armv7
+  - i386
+startup: services
+init: false
+boot: auto
+homeassistant_api: true
+ports:
+  33863/tcp: null
+ports_description:
+  33863/tcp: AirSendWebService communication (debug/tests uniquement, non requis par l'addon lui-meme)
+map:
+  - data:rw
+options:
+  boxes:
+    - name: ""
+      localip: ""
+      ipv6: ""
+      password: ""
+      gw: false
+  system:
+    log_level: INFO
+  mqtt: {}
+schema:
+  boxes:
+    - name: str
+      localip: str
+      ipv6: str
+      password: str
+      gw: bool
+  system:
+    log_level: match(^ERROR|WARNING|INFO|DEBUG$)
+  mqtt:
+    host: "str?"
+    port: "int?"
+    ssl: "bool?"
+    username: "str?"
+    password: "str?"
+services:
+  - "mqtt:need"
+
+# NOTE : l'option "auto_include" de l'addon d'origine (creation automatique
+# et silencieuse d'entites a la reception d'une trame inconnue) n'est PAS
+# reprise ici, deliberement : elle contredit la decision actee en Phase 1 de
+# toujours demander confirmation utilisateur (nom + kind + domaine) avant de
+# creer un appareil, pour eviter qu'un volet soit devine a tort comme une
+# lumiere (ou l'inverse) sans que personne ne s'en rende compte.
+
