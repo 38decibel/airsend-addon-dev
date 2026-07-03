@@ -41,13 +41,37 @@ CALLBACK_HOST = "127.0.0.1"
 def _load_boxes() -> list[BoxConfig]:
     raw = os.environ.get("BOXES_JSON", "[]")
     try:
-        entries = json.loads(raw)
+        parsed = json.loads(raw)
     except json.JSONDecodeError:
         _LOGGER.error("BOXES_JSON is not valid JSON, no box will be configured: %r", raw)
         return []
 
+    # bashio::config sur une option de type "liste d'objets" peut renvoyer un
+    # objet nu plutot qu'un tableau a un element (observe en pratique avec une
+    # seule box configuree) - on normalise dans tous les cas vers une liste.
+    if isinstance(parsed, dict):
+        entries: list = [parsed]
+    elif isinstance(parsed, list):
+        entries = parsed
+    else:
+        _LOGGER.error("BOXES_JSON has an unexpected shape (%s): %r", type(parsed).__name__, parsed)
+        entries = []
+
     boxes: list[BoxConfig] = []
     for entry in entries:
+        # Garde-fou supplementaire si un element arrivait encore serialise en
+        # chaine (double encodage) plutot qu'en objet.
+        if isinstance(entry, str):
+            try:
+                entry = json.loads(entry)
+            except json.JSONDecodeError:
+                _LOGGER.error("Skipping unparsable box entry string: %r", entry)
+                continue
+
+        if not isinstance(entry, dict):
+            _LOGGER.error("Skipping malformed box entry (not an object): %r", entry)
+            continue
+
         try:
             boxes.append(
                 BoxConfig(
