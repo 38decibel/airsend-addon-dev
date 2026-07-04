@@ -17,8 +17,7 @@ Deux categories de ThingEvent, distinguees par la presence de thingnotes.uid :
   - SANS uid : evenement non sollicite = candidat serieux pour "quelqu'un a
     appuye sur une telecommande physique". On ne le traite QUE si :
       * type == 3 (GOT, cf. enum ThingEvent.type du spec)
-      * ET reliability compris entre 0x6 (6) et 0x47 (71) inclus/exclusif
-        (cf. hass_cb.php : `$val['reliability'] > 0x6 && $val['reliability'] < 0x47`)
+      * ET reliability compris entre reliability_min (ajustable) et 0x47 (71)
     Le champ `reliability` n'apparait dans AUCUN spec OpenAPI vu jusqu'ici :
     c'est une extension non documentee du firmware, mais confirmee critique en
     pratique - sans ce filtre, on capte du bruit RF ambiant en plus des
@@ -69,8 +68,6 @@ class CallbackServer:
 
     @property
     def base_url_hint(self) -> str:
-        """Utile pour construire callback_base_url passe a BindManager - a
-        remplacer par l'IP interne reelle du conteneur au demarrage (main.py)."""
         return f"http://<addon_ip>:{self._port}"
 
     async def start(self) -> None:
@@ -85,15 +82,11 @@ class CallbackServer:
             await self._runner.cleanup()
             self._runner = None
 
-    # ------------------------------------------------------------------ #
-    # Handler
-    # ------------------------------------------------------------------ #
-
     async def _handle_callback(self, request: web.Request) -> web.Response:
         box_slug = request.match_info["box_slug"]
         try:
             payload = await request.json()
-        except Exception as exc:  # payload malforme : on logue et on repond 200 quand meme
+        except Exception as exc:
             _LOGGER.warning("Malformed callback payload from box %s: %s", box_slug, exc)
             return web.Response(status=200)
 
@@ -125,15 +118,12 @@ class CallbackServer:
         has_uid = "uid" in thingnotes and thingnotes.get("uid") is not None
 
         if has_uid:
-            # Accuse de reception d'une commande qu'on a nous-memes envoyee.
-            # Pas de routage inclusion. Log pour debug / futur suivi d'ACK.
             _LOGGER.debug(
                 "Command ack event (uid=%s) type=%s on box=%s channel=%s/%s",
                 thingnotes.get("uid"), event_type, box_slug, channel_id, channel_source,
             )
             return
 
-        # --- Evenement non sollicite : candidat "telecommande physique" ---
         if event_type != 3:  # GOT uniquement
             _LOGGER.debug(
                 "Interrupt event ignored (type=%s != GOT) on box=%s channel=%s/%s",
@@ -159,10 +149,6 @@ class CallbackServer:
                 await self._on_state(device.key, stype, svalue, channel)
             return
 
-        # Appareil inconnu : on ne cree JAMAIS automatiquement (contrairement a
-        # l'ancien hass_cb.php). On alimente la file de candidats uniquement si
-        # le mode inclusion est actif - sinon on ignore silencieusement pour
-        # ne pas polluer les logs avec tout le bruit RF ambiant du foyer.
         if not self._inclusion.active:
             _LOGGER.debug(
                 "Unknown device, inclusion mode OFF, ignored: box=%s channel=%s/%s",
