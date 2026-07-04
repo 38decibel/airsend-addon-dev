@@ -19,8 +19,8 @@ _DEVICE_CLASS_BY_STYPE = {
 }
 
 
-def discovery_config(device, topics: DeviceTopics) -> dict:
-    payload = base_discovery_payload(device, COMPONENT, topics)
+def discovery_config(device, topics: DeviceTopics, device_info: dict) -> dict:
+    payload = base_discovery_payload(device, COMPONENT, topics, device_info)
     device_class, unit = _DEVICE_CLASS_BY_STYPE.get(device.kind, (None, None))
     if device_class:
         payload["device_class"] = device_class
