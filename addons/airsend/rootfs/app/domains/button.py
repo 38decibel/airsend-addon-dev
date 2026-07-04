@@ -13,14 +13,14 @@ PROG/PING. A confirmer sur le terrain avant usage reel non-supervise.
 
 from __future__ import annotations
 
-from domains.topics import AVAILABILITY_OFFLINE, AVAILABILITY_ONLINE, AVAILABILITY_TOPIC, DeviceTopics, device_info_block
+from domains.topics import AVAILABILITY_OFFLINE, AVAILABILITY_ONLINE, AVAILABILITY_TOPIC, DeviceTopics
 
 COMPONENT = "button"
 
 _STATE_TOGGLE = 18
 
 
-def discovery_config(device, topics: DeviceTopics) -> dict:
+def discovery_config(device, topics: DeviceTopics, device_info: dict) -> dict:
     return {
         "name": device.friendly_name,
         "unique_id": f"airsend_{device.key}",
@@ -29,7 +29,7 @@ def discovery_config(device, topics: DeviceTopics) -> dict:
         "availability_topic": AVAILABILITY_TOPIC,
         "payload_available": AVAILABILITY_ONLINE,
         "payload_not_available": AVAILABILITY_OFFLINE,
-        "device": device_info_block(device.box, device.box),
+        "device": device_info,
     }
 
 
