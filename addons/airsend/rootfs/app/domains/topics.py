@@ -39,20 +39,33 @@ AVAILABILITY_ONLINE = "online"
 AVAILABILITY_OFFLINE = "offline"
 
 
-def device_info_block(box_slug: str, box_name: str) -> dict:
-    """Bloc `device` MQTT discovery commun : regroupe toutes les entites d'une
-    meme box AirSend sous un seul appareil cote HA."""
-    return {
-        "identifiers": [f"airsend_{box_slug}"],
-        "name": f"AirSend - {box_name}",
-        "manufacturer": "Devmel",
-        "model": "AirSend / AirSend Duo",
-    }
+def build_device_info(identifier: str, name: str, model: str | None = None, mac: str | None = None) -> dict:
+    """
+    Bloc `device` MQTT discovery commun : regroupe toutes les entites d'une
+    meme box AirSend sous un seul appareil cote HA.
+
+    name   : nom affiche = nom configure par l'utilisateur pour cette box
+             (PAS un libelle generique "AirSend Addon").
+    model  : type de box detecte ("AirSend" / "AirSend Duo"), affiche par HA
+             sous forme "<model>, by <manufacturer>". None si pas encore
+             detecte (catalogue de protocoles pas encore recupere).
+    mac    : adresse MAC derivee de l'IPv6 link-local, exposee via
+             "connections" (champ natif HA pour ce genre d'identifiant),
+             plutot qu'une entite separee.
+    """
+    info: dict = {"identifiers": [identifier], "name": name, "manufacturer": "Devmel"}
+    if model:
+        info["model"] = model
+    if mac:
+        info["connections"] = [["mac", mac]]
+    return info
 
 
-def base_discovery_payload(device, component: str, topics: DeviceTopics) -> dict:
+def base_discovery_payload(device, component: str, topics: DeviceTopics, device_info: dict) -> dict:
     """Champs communs a toute config de discovery, a completer par chaque
-    domains/*.py avec ses champs specifiques (device_class, position_topic...)."""
+    domains/*.py avec ses champs specifiques (device_class, position_topic...).
+    `device_info` est calcule par mqtt_bridge (build_device_info) car lui seul
+    connait le nom reel et le modele detecte de la box associee."""
     return {
         "name": device.friendly_name,
         "unique_id": f"airsend_{device.key}",
@@ -60,5 +73,5 @@ def base_discovery_payload(device, component: str, topics: DeviceTopics) -> dict
         "availability_topic": AVAILABILITY_TOPIC,
         "payload_available": AVAILABILITY_ONLINE,
         "payload_not_available": AVAILABILITY_OFFLINE,
-        "device": device_info_block(device.box, device.box),
+        "device": device_info,
     }
