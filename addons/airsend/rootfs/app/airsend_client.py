@@ -10,11 +10,13 @@ Points confirmes empiriquement (cf. historique de conception) :
 - L'authentification se fait via un header "Authorization: Bearer <locator>".
   ATTENTION, forme confirmee par un test curl reussi de l'utilisateur (pas le
   simple commentaire du spec, qui est trompeur) :
-      sp://<password>@[<ipv6_link_local>]/?gw=<0|1>&rhost=<ipv4>
-  Le champ entre crochets est l'adresse IPv6 LINK-LOCAL de la box (ex.
-  fe80::dcf6:e5ff:febb:5d74, imprimee sous le boitier a cote du mot de
-  passe), PAS son IPv4 LAN. L'IPv4 (ex. 192.168.1.17) est transmise a part,
-  via le parametre de requete "rhost". password = mot de passe de la box.
+      sp://<password>@[<localip>]/?gw=<0|1>&rhost=<ipv4>
+  CORRECTION IMPORTANTE (les noms de champs etaient inverses dans une version
+  anterieure) : "localip" est le nom OFFICIEL Devmel de l'adresse IPv6
+  LINK-LOCAL de la box (ex. fe80::dcf6:e5ff:febb:5d74, imprimee sous le
+  boitier a cote du mot de passe - c'est litteralement ce qui est appele
+  "Local IP" dans l'app officielle). "ipv4" est l'adresse IPv4 LAN
+  secondaire (ex. 192.168.1.17), transmise via le parametre "rhost".
 - Le endpoint /device n'existe PAS en local (teste avec et sans Bearer) : la
   notion de "device" nomme/type est une construction cloud/app uniquement.
 - POST /airsend/bind SANS "channel" dans le body = ecoute globale (aucune
@@ -46,16 +48,16 @@ class BoxConfig:
     Configuration d'une box AirSend, telle que saisie dans les options de
     l'addon.
 
-    localip : adresse IPv4 LAN de la box (ex. 192.168.1.17) - utilisee comme
-              parametre "rhost" du locator, et pour les diagnostics reseau.
-    ipv6    : adresse IPv6 link-local de la box (ex. fe80::dcf6:e5ff:febb:5d74,
-              SANS les crochets) - c'est elle qui va entre crochets dans le
-              locator. Imprimee sous le boitier, a cote du mot de passe.
+    localip : adresse IPv6 LINK-LOCAL de la box (ex. fe80::dcf6:e5ff:febb:5d74,
+              SANS les crochets) - c'est le nom officiel Devmel ("Local IP"),
+              c'est elle qui va entre crochets dans le locator.
+    ipv4    : adresse IPv4 LAN secondaire de la box (ex. 192.168.1.17) -
+              utilisee comme parametre "rhost" du locator.
     """
 
     name: str
     localip: str
-    ipv6: str
+    ipv4: str
     password: str
     gw: bool = False
 
@@ -65,9 +67,9 @@ class BoxConfig:
         return "".join(c if c.isalnum() else "_" for c in self.name.lower()) or "box"
 
     def locator(self) -> str:
-        """Construit le locator sp://password@[ipv6]/?gw=0|1&rhost=ipv4 utilise en Bearer."""
+        """Construit le locator sp://password@[localip]/?gw=0|1&rhost=ipv4 utilise en Bearer."""
         gw_flag = "1" if self.gw else "0"
-        return f"sp://{self.password}@[{self.ipv6}]/?gw={gw_flag}&rhost={self.localip}"
+        return f"sp://{self.password}@[{self.localip}]/?gw={gw_flag}&rhost={self.ipv4}"
 
 
 class AirSendClient:
