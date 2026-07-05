@@ -65,9 +65,17 @@ def base_discovery_payload(device, component: str, topics: DeviceTopics, device_
     """Champs communs a toute config de discovery, a completer par chaque
     domains/*.py avec ses champs specifiques (device_class, position_topic...).
     `device_info` est calcule par mqtt_bridge (build_device_info) car lui seul
-    connait le nom reel et le modele detecte de la box associee."""
+    connait le nom reel et le modele detecte de la box associee.
+
+    has_entity_name=True + object_id : evite que HA prefixe le nom de
+    l'entite par le nom de l'appareil (ex. "AIRSEND_BB5D74 Volet cuisine
+    porte" -> juste "Volet cuisine porte"), et donne un entity_id propre et
+    stable (ex. cover.lames_pergola) independant du nom affiche, qui lui peut
+    changer sans casser les automatisations existantes."""
     return {
         "name": device.friendly_name,
+        "object_id": device.key,
+        "has_entity_name": True,
         "unique_id": f"airsend_{device.key}",
         "state_topic": topics.state,
         "availability_topic": AVAILABILITY_TOPIC,

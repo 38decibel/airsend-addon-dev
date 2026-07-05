@@ -30,6 +30,19 @@ def discovery_config(device, topics: DeviceTopics, device_info: dict) -> dict:
     return payload
 
 
+def encode_optimistic_state(device, topic: str, payload: str) -> list[tuple[str, str]]:
+    """Etat optimiste publie juste apres une commande envoyee avec succes -
+    cf. cover.py pour la justification (pas de retour d'etat fiable en push
+    RF pour la plupart des recepteurs on/off)."""
+    topics = DeviceTopics.for_device(COMPONENT, device.key)
+    if topic != topics.command:
+        return []
+    value = payload.upper()
+    if value in ("ON", "OFF"):
+        return [(topics.state, value)]
+    return []
+
+
 def encode_state(device, stype: str, svalue) -> list[tuple[str, str]]:
     topics = DeviceTopics.for_device(COMPONENT, device.key)
     if stype == "level":

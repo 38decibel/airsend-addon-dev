@@ -5,20 +5,25 @@ Deux kinds AirSend mappes ici (cf. table de decision Phase 1) :
 
   - "volet_roulant" (Profalux, rolling code) : PAS de retour de position fiable.
     On envoie UP/DOWN/STOP, on affiche un etat "assumed" (open/closed/unknown)
-    sans `current_position` — comportement HA standard pour les covers sans
+    sans `current_position` - comportement HA standard pour les covers sans
     feedback (`assumed_state: true`), plutot que d'inventer une position.
 
   - "niveau" (ex: IOU/Somfy - "Lames Pergola") : un octet de position 0-255
     (value_binsize=8, confirme par l'export cloud reel). On expose
     current_position (0-100%) et set_position.
 
-ATTENTION - hypothese non confirmee empiriquement (a valider sur le terrain
-avant mise en prod reelle) : le mapping OPEN->UP(35)/CLOSE->DOWN(34) pour le
-kind "volet_roulant" est deduit par symetrie avec la reception (ou UP/DOWN
-recus sont interpretes comme level 100/0 dans thing_notes.py), MAIS jamais
-verifie en emission reelle vers une box. A confirmer par un premier test
-manuel (envoyer la commande, observer si le volet monte/descend dans le bon
-sens) avant de considerer ce mapping comme acquis.
+  ATTENTION - "Lames Pergola" (pid 26848) s'est avere fonctionner en pratique
+  comme un "volet_roulant" classique (OPEN/CLOSE/STOP), pas en "niveau" - le
+  mapping protocole -> kind reste donc bien du ressort de l'utilisateur, pas
+  une deduction fiable depuis le pid seul (confirme sur le terrain).
+
+`invert` (option par device) : gere ICI, au niveau de la traduction
+commande/etat, PAS via un simple label HA (state_open/state_closed) comme
+dans une version anterieure - cette approche ne compensait que l'AFFICHAGE,
+pas le sens reel de la commande RF envoyee, ce qui ne resolvait pas le cas
+d'un volet physiquement monte/cable a l'envers (CLOSE qui ouvre reellement).
+Avec l'inversion faite ici, les valeurs "open"/"closed" publiees sur MQTT
+signifient toujours l'etat physique reel, quel que soit le cablage.
 """
 
 from __future__ import annotations
@@ -43,8 +48,7 @@ def discovery_config(device, topics: DeviceTopics, device_info: dict) -> dict:
         }
     )
 
-    kind = device.kind
-    if kind == "niveau":
+    if device.kind == "niveau":
         payload.update(
             {
                 "position_topic": topics.position,
@@ -58,15 +62,25 @@ def discovery_config(device, topics: DeviceTopics, device_info: dict) -> dict:
         # l'etat open/closed/unknown sans feedback continu.
         payload["assumed_state"] = True
 
-    invert = device.options.get("invert", False)
-    if invert:
-        payload["state_open"] = "closed"
-        payload["state_closed"] = "open"
-
     return payload
 
 
+def _is_inverted(device) -> bool:
+    return bool(device.options.get("invert", False))
+
+
 def encode_state(device, stype: str, svalue) -> list[tuple[str, str]]:
+    """
+    Interprete un ThingEvent RECU (typiquement une telecommande physique
+    tierce, cf. callback_server.py). IMPORTANT : `invert` n'est PAS applique
+    ici, volontairement - `invert` corrige la traduction de NOS PROPRES
+    commandes emises (cf. decode_command), pas necessairement la lecture d'un
+    evenement emis par un autre emetteur (la telecommande physique d'origine).
+    Rien ne prouve que ces deux sens soient affectes symetriquement par le
+    meme probleme de cablage/orientation - le confirmer avant d'etendre le
+    swap ici, plutot que de deviner et risquer d'inverser un affichage qui
+    etait correct.
+    """
     topics = DeviceTopics.for_device(COMPONENT, device.key)
     out: list[tuple[str, str]] = []
 
@@ -92,19 +106,59 @@ def encode_state(device, stype: str, svalue) -> list[tuple[str, str]]:
     return out
 
 
+def encode_optimistic_state(device, topic: str, payload: str) -> list[tuple[str, str]]:
+    """
+    Publie un etat optimiste juste apres l'envoi reussi d'une commande, tant
+    qu'aucun retour RF reel ne confirme la position (cas normal pour un
+    rolling-code sans feedback). C'est une approximation assumee, pas une
+    verite terrain - si la commande echoue silencieusement cote materiel
+    (hors-portee, obstacle...), cet etat optimiste restera incorrect jusqu'a
+    la prochaine action reelle (physique ou HA) qui le corrige.
+
+    IMPORTANT : contrairement a `decode_command`, on ne re-applique PAS le
+    swap `invert` ici. `invert` ne sert qu'a choisir le bon code RF a
+    envoyer pour obtenir l'effet physique demande - une fois cet effet
+    obtenu, l'etat affiche doit rester ce que l'utilisateur a demande
+    (CLOSE -> "closed"), pas son inverse.
+    """
+    topics = DeviceTopics.for_device(COMPONENT, device.key)
+
+    if topic == topics.command:
+        cmd = payload.upper()
+        if cmd == "OPEN":
+            return [(topics.state, "open")]
+        if cmd == "CLOSE":
+            return [(topics.state, "closed")]
+        return []  # STOP : position inconnue apres un arret en cours de route
+
+    if topic == topics.set_position and device.kind == "niveau":
+        try:
+            position = max(0, min(100, int(payload)))
+        except ValueError:
+            return []
+        return [(topics.position, str(position)), (topics.state, "open" if position > 0 else "closed")]
+
+    return []
+
+
 def decode_command(device, topic: str, payload: str) -> dict | None:
     topics = DeviceTopics.for_device(COMPONENT, device.key)
+    inverted = _is_inverted(device)
 
     if topic == topics.set_position and device.kind == "niveau":
         try:
             position = max(0, min(100, int(payload)))
         except ValueError:
             return None
-        raw_byte = round(position / 100 * 255)
+        raw_position = 100 - position if inverted else position
+        raw_byte = round(raw_position / 100 * 255)
         return {"notes": [{"method": 1, "type": 1, "value": raw_byte}]}
 
     if topic == topics.command:
-        value = {"OPEN": _STATE_UP, "CLOSE": _STATE_DOWN, "STOP": _STATE_STOP}.get(payload.upper())
+        cmd = payload.upper()
+        if inverted:
+            cmd = {"OPEN": "CLOSE", "CLOSE": "OPEN", "STOP": "STOP"}.get(cmd, cmd)
+        value = {"OPEN": _STATE_UP, "CLOSE": _STATE_DOWN, "STOP": _STATE_STOP}.get(cmd)
         if value is None:
             return None
         return {"notes": [{"method": 1, "type": 0, "value": value}]}
