@@ -30,7 +30,7 @@ class DeviceTopics:
             command=f"{base}/set",
             set_position=f"{base}/set_position",
             position=f"{base}/position",
-            discovery=f"homeassistant/{component}/airsend_{device_key}/config",
+            discovery=f"homeassistant/{component}/{device_key}_airsend/config",
         )
 
 
