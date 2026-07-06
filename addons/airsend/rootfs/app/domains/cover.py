@@ -112,36 +112,19 @@ def encode_optimistic_state(device, topic: str, payload: str) -> list[tuple[str,
     """
     Publie un etat optimiste juste apres l'envoi reussi d'une commande, tant
     qu'aucun retour RF reel ne confirme la position (cas normal pour un
-    rolling-code sans feedback). C'est une approximation assumee, pas une
-    verite terrain - si la commande echoue silencieusement cote materiel
-    (hors-portee, obstacle...), cet etat optimiste restera incorrect jusqu'a
-    la prochaine action reelle (physique ou HA) qui le corrige.
-
-    IMPORTANT : contrairement a `decode_command`, on ne re-applique PAS le
-    swap `invert` ici. `invert` ne sert qu'a choisir le bon code RF a
-    envoyer pour obtenir l'effet physique demande - une fois cet effet
-    obtenu, l'etat affiche doit rester ce que l'utilisateur a demande
-    (CLOSE -> "closed"), pas son inverse.
-
-    STOP : publie explicitement "unknown" (pas juste une absence de
-    publication). Sans ca, l'etat MQTT retenu restait bloque sur le dernier
-    "open"/"closed" optimiste envoye par la commande PRECEDENTE (ex. OPEN),
-    alors qu'un arret en cours de route ne garantit ni l'un ni l'autre. Le
-    frontend HA desactive le bouton correspondant des que l'etat vaut
-    exactement "open" ou "closed" - meme avec assumed_state=true (comportement
-    documente, cf. github.com/home-assistant/core/issues/147976) - donc
-    laisser trainer l'ancien etat bloquait le bouton "ouvrir" apres un
-    STOP survenu pendant une montee. "unknown" reactive les deux boutons.
+    rolling-code sans feedback).
+    
+    SOLUTION AU PROBLEME : on publie TOUJOURS "unknown" plutot que d'assumer
+    "open"/"closed". HA ne grise jamais le bouton sur "unknown", meme avec
+    assumed_state=true. C'est une valeur "honnete" : on sait qu'il y a du
+    mouvement potentiel, mais on ne sait pas vraiment la position finale.
     """
     topics = DeviceTopics.for_device(COMPONENT, device.key)
 
     if topic == topics.command:
         cmd = payload.upper()
-        if cmd == "OPEN":
-            return [(topics.state, "open")]
-        if cmd == "CLOSE":
-            return [(topics.state, "closed")]
-        if cmd == "STOP":
+        if cmd in ("OPEN", "CLOSE", "STOP"):
+            # Publier "unknown" dans tous les cas pour ne jamais griser les boutons
             return [(topics.state, "unknown")]
         return []
 
@@ -150,6 +133,7 @@ def encode_optimistic_state(device, topic: str, payload: str) -> list[tuple[str,
             position = max(0, min(100, int(payload)))
         except ValueError:
             return []
+        # Pour "niveau" avec feedback, on peut assumer la position demandee
         return [(topics.position, str(position)), (topics.state, "open" if position > 0 else "closed")]
 
     return []
