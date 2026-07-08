@@ -172,9 +172,13 @@ class AirSendClient:
         (channel.id, channel.source) plutot que de multiplier les bind cibles
         (evite la latence d'un round-robin, cf. decision Phase 1).
         """
-        body: dict[str, Any] = {"duration": duration, "callback": callback_url}
-        if channel is not None:
-            body["channel"] = channel
+        body: dict[str, Any] = {
+    "duration": duration,
+    "callback": callback_url,
+    "channel": {
+        "id": 25455,
+    },
+}
         return await self._request("POST", "/airsend/bind", box=box, json_body=body)
 
     async def unbind(self, box: BoxConfig) -> None:
