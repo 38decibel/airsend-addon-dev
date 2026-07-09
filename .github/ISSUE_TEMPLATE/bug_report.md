@@ -1,7 +1,7 @@
 ---
 name: Bug report
 about: Create a report to help us improve
-title: "[BUG] | filename.ext | Title"
+title: "[ISSUE] | filename.ext | Title"
 labels: ''
 assignees: ''
 
@@ -18,4 +18,12 @@ assignees: ''
 
 **How can fix it:**
 <fix description>
-<If possible add Noncompliant code example and Compliant solution>
+
+Noncompliant code example 
+```py
+python code
+```
+Compliant solution
+```py
+python code
+```
