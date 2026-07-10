@@ -91,7 +91,7 @@ class CallbackServer:
             await self._runner.cleanup()
             self._runner = None
 
-    async def _handle_callback(self, request: web.Request) -> web.Response:
+    def _handle_callback(self, request: web.Request) -> web.Response:
         box_slug = request.match_info["box_slug"]
         try:
             payload = await request.json()
@@ -106,7 +106,7 @@ class CallbackServer:
 
         for event in events:
             try:
-                await self._handle_event(box_slug, event)
+                self._handle_event(box_slug, event)
             except Exception:
                 _LOGGER.exception("Error processing event from box %s: %r", box_slug, event)
 
