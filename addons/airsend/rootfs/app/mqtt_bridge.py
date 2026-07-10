@@ -105,7 +105,7 @@ class MqttBridge:
     # Connexion
     # ------------------------------------------------------------------ #
 
-    def start(self) -> None:
+    async def start(self) -> None:
         self._mqtt.connect_async(self._host, self._port)
         self._mqtt.loop_start()
         self._candidates_task = asyncio.create_task(self._candidates_publisher_loop())
