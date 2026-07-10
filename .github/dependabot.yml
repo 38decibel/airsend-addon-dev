@@ -17,3 +17,12 @@ updates:
     cooldown:
       default-days: 7
     open-pull-requests-limit: 10
+    
+groups:
+  python-dependencies:
+    patterns:
+      - "*"
+
+  docker-images:
+    patterns:
+      - "*"
