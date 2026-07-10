@@ -1,65 +1,38 @@
 name: Release addon
-
 on:
   push:
     branches:
       - main
-
-
 permissions:
   contents: write
-
-
 jobs:
-
   release:
-
     runs-on: ubuntu-latest
-
-
     steps:
-
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
         with:
           fetch-depth: 0
-
-
       - name: Configure git
         run: |
           git config user.name github-actions
           git config user.email github-actions@github.com
-
-
       - name: Create release
         run: |
           python3 .github/scripts/release.py
-
-
       - name: Commit version
         run: |
-
           git add \
             addons/airsend/config.yaml \
             CHANGELOG.md
-
-
           git commit \
             -m "chore: release"
-
-
           git push
-
-
       - name: Tag
         run: |
-
           VERSION=$(grep version addons/airsend/config.yaml | awk '{print $2}' | tr -d '"')
-
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
           git tag "v$VERSION"
-
           git push origin "v$VERSION"
-
-
       - name: GitHub Release
         uses: softprops/action-gh-release@718ea10b132b3b2eba29c1007bb80653f286566b
         with:
