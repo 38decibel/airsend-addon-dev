@@ -45,21 +45,21 @@ class BoxBindHandle:
 
     async def stop(self) -> None:
         self._stopped.set()
-        _cancelled = False
-        if self._task is not None:
-            self._task.cancel()
-            try:
-                await self._task
-            except asyncio.CancelledError:
-                _cancelled = True
-            finally:
-                self._task = None
+    
         try:
-            await self._client.unbind(self.box)
-        except AirSendError as exc:
-            _LOGGER.debug("unbind failed for box %s (probably already unbound): %s", self.box.name, exc)
-        if _cancelled:
-            raise asyncio.CancelledError()
+            if self._task is not None:
+                self._task.cancel()
+                await self._task
+        finally:
+            self._task = None
+            try:
+                await self._client.unbind(self.box)
+            except AirSendError as exc:
+                _LOGGER.debug(
+                    "unbind failed for box %s (probably already unbound): %s",
+                    self.box.name,
+                    exc,
+                )
 
     async def _run(self) -> None:
         """Boucle de (re)bind avec backoff simple en cas d'echec (box offline,
