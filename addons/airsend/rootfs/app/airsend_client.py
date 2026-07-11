@@ -25,6 +25,7 @@ Points confirmes empiriquement (cf. historique de conception) :
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from dataclasses import dataclass
 from typing import Any
@@ -83,6 +84,18 @@ class AirSendClient:
     def __init__(self, base_url: str = "http://127.0.0.1:33863") -> None:
         self._base_url = base_url.rstrip("/")
         self._session: aiohttp.ClientSession | None = None
+        # Confirme empiriquement le 2026-07-11 : AirSendWebService retourne
+        # 500 (corps vide) des qu'un peu trop de /airsend/transfer arrivent
+        # en concurrence (2 simultanes passent, au-dela ca casse - limite
+        # exacte non garantie stable). D'ou ce verrou strict (1 seul
+        # transfer en vol a la fois). Verrou GLOBAL au client (pas par box)
+        # car un seul process AirSendWebService sert potentiellement
+        # plusieurs box (cf. docstring de la classe) - la contention
+        # observee n'a ete testee qu'avec une seule box configuree, donc on
+        # ne sait pas si la limite est par-box (radio physique) ou globale
+        # au service. A revalider si une 2e box est ajoutee un jour : un
+        # verrou par-box serait faux si la limite s'avere globale.
+        self._transfer_lock = asyncio.Lock()
 
     def start(self) -> None:
         if self._session is None:
@@ -201,7 +214,12 @@ class AirSendClient:
         }
         if callback_url is not None:
             body["callback"] = callback_url
-        return await self._request("POST", "/airsend/transfer", box=box, json_body=body)
+        # Serialisation stricte : cf. commentaire sur self._transfer_lock
+        # dans __init__. Sans ca, une rafale de commandes (ex. "fermer tous
+        # les volets" depuis HA) declenche plusieurs /airsend/transfer
+        # concurrents et AirSendWebService en 500 une partie d'entre eux.
+        async with self._transfer_lock:
+            return await self._request("POST", "/airsend/transfer", box=box, json_body=body)
 
     async def list_events(self, box: BoxConfig) -> list[dict]:
         """GET /airsend/events - derniers ThingEvent (utilise en secours/debug, on
