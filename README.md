@@ -24,7 +24,7 @@ To get the app running:
 3. Run the app
 5. Check your MQTT broker to see the AirSend device.
 6. Toggle the inclusion switch and push a button on your RF remote
-7. ...Next steps need to be written !
+7. ...Next steps need to be written ! Coding in progress...
 
 ### App configuration
 

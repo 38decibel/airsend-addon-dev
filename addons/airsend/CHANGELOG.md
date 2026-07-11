@@ -5,6 +5,7 @@
 ### Changed
 
 ### Fixed
+- **readme:** add little precision in final step (#26)
 
 ### Dependencies
 
