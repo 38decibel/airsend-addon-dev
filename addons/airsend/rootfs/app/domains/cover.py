@@ -4,7 +4,7 @@ Domaine `cover`.
 Deux kinds AirSend mappes ici (cf. table de decision Phase 1) :
 
   - "volet_roulant" (Profalux, rolling code) : PAS de retour de position fiable.
-    On envoie UP/DOWN/STOP, on affiche un etat "assumed" (open/closed/unknown)
+    On envoie UP/DOWN/STOP, on affiche un etat "assumed" (open/closed)
     sans `current_position` - comportement HA standard pour les covers sans
     feedback (`assumed_state: true`), plutot que d'inventer une position.
 
@@ -24,6 +24,18 @@ pas le sens reel de la commande RF envoyee, ce qui ne resolvait pas le cas
 d'un volet physiquement monte/cable a l'envers (CLOSE qui ouvre reellement).
 Avec l'inversion faite ici, les valeurs "open"/"closed" publiees sur MQTT
 signifient toujours l'etat physique reel, quel que soit le cablage.
+
+IMPORTANT - le state_topic MQTT du composant `cover` de HA n'accepte QUE
+"open"/"closed"/"opening"/"closing"/"stopped" comme payload (cf.
+homeassistant/components/mqtt/cover.py) : "unknown" y est rejete (log
+"Payload is not supported"). Pour un volet_roulant sans confirmation RF
+fiable de la position finale, la bonne reponse cote HA est donc de NE RIEN
+PUBLIER sur `state` plutot que de publier une valeur inventee ou invalide -
+le dernier etat connu reste affiche, et `assumed_state: true` (cf.
+discovery_config) garde deja les boutons Ouvrir/Fermer/Stop actifs
+independamment de cet etat affiche. Ne pas reintroduire de publication
+"unknown" ici sans avoir d'abord verifie la liste des payloads acceptes par
+le composant HA cible.
 """
 
 from __future__ import annotations
@@ -58,8 +70,10 @@ def discovery_config(device, topics: DeviceTopics, device_info: dict) -> dict:
             }
         )
     else:
-        # volet_roulant : pas de position fiable, HA doit se contenter de
-        # l'etat open/closed/unknown sans feedback continu.
+        # volet_roulant : pas de position fiable, HA doit se contenter du
+        # dernier etat open/closed connu, sans feedback continu. Les boutons
+        # restent actifs grace a assumed_state (pas besoin de publier
+        # "unknown" pour ca, cf. note de module plus haut).
         payload["assumed_state"] = True
 
     return payload
@@ -99,11 +113,13 @@ def encode_state(device, stype: str, svalue) -> list[tuple[str, str]]:
             # DOWN/UP recus -> level 0/100 (cf. thing_notes.py)
             out.append((topics.state, "closed" if svalue == 0 else "open"))
         elif stype == "state" and svalue == "stop":
-            # Meme raisonnement que dans encode_optimistic_state : publier
-            # "unknown" explicitement plutot que de ne rien faire, sinon le
-            # dernier open/closed connu reste fige et grise le bouton
-            # correspondant cote HA.
-            out.append((topics.state, "unknown"))
+            # STOP recu depuis une telecommande physique tierce : la
+            # position reelle a ce moment est inconnue et "unknown" n'est
+            # pas un payload valide pour le state_topic MQTT cover (cf. note
+            # de module). On ne publie donc rien : le dernier etat open/closed
+            # connu reste affiche tel quel plutot que d'etre remplace par une
+            # valeur invalide ou une supposition non fondee.
+            pass
 
     return out
 
@@ -113,19 +129,20 @@ def encode_optimistic_state(device, topic: str, payload: str) -> list[tuple[str,
     Publie un etat optimiste juste apres l'envoi reussi d'une commande, tant
     qu'aucun retour RF reel ne confirme la position (cas normal pour un
     rolling-code sans feedback).
-    
-    SOLUTION AU PROBLEME : on publie TOUJOURS "unknown" plutot que d'assumer
-    "open"/"closed". HA ne grise jamais le bouton sur "unknown", meme avec
-    assumed_state=true. C'est une valeur "honnete" : on sait qu'il y a du
-    mouvement potentiel, mais on ne sait pas vraiment la position finale.
+
+    Pour un volet_roulant, on ne connait pas la position finale reelle apres
+    OPEN/CLOSE/STOP (pas de confirmation RF) : on ne publie donc rien sur
+    `state` plutot que d'y mettre "unknown" (invalide pour le state_topic
+    MQTT cover, cf. note de module) ou une valeur "open"/"closed" supposee a
+    tort. Le dernier etat connu reste affiche ; assumed_state=true (cf.
+    discovery_config) garde deja les boutons actifs independamment de cet
+    etat affiche, donc rien n'est perdu cote UX.
     """
     topics = DeviceTopics.for_device(COMPONENT, device.key)
 
     if topic == topics.command:
-        cmd = payload.upper()
-        if cmd in ("OPEN", "CLOSE", "STOP"):
-            # Publier "unknown" dans tous les cas pour ne jamais griser les boutons
-            return [(topics.state, "unknown")]
+        # volet_roulant : aucune confirmation RF fiable de la position
+        # finale -> on ne publie rien (cf. docstring ci-dessus).
         return []
 
     if topic == topics.set_position and device.kind == "niveau":
