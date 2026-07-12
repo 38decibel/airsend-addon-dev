@@ -5,6 +5,16 @@
 ### Changed
 
 ### Fixed
+
+### Dependencies
+
+## 0.11.0 - 2026-07-12
+
+### Added
+
+### Changed
+
+### Fixed
 - **cover:** stop publishing unsupported "unknown" MQTT state (#28)
 
 ### Dependencies
