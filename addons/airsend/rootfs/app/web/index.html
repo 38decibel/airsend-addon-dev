@@ -55,8 +55,16 @@
     display: flex; justify-content: space-between; align-items: center;
     padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; margin-bottom: 6px;
   }
-  .device-row { display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid var(--border); font-size: 0.9rem; }
+  .device-row { display: flex; justify-content: space-between; align-items: center; padding: 6px 0; border-bottom: 1px solid var(--border); font-size: 0.9rem; gap: 8px; }
   .device-row:last-child { border-bottom: none; }
+  .device-row .device-info { flex: 1; min-width: 0; }
+  .device-row .device-actions { display: flex; gap: 4px; flex-shrink: 0; }
+  .icon-btn {
+    background: none; border: 1px solid var(--border); border-radius: 6px; color: var(--muted);
+    padding: 5px 8px; font-size: 0.85rem; cursor: pointer;
+  }
+  .icon-btn:hover { border-color: var(--accent); color: var(--text); }
+  .icon-btn.danger:hover { border-color: var(--danger); color: var(--danger); }
   .spinner {
     display: inline-block; width: 14px; height: 14px; border: 2px solid var(--muted);
     border-top-color: var(--accent); border-radius: 50%; animation: spin 0.8s linear infinite;
@@ -76,6 +84,24 @@
   <div id="device-list" class="muted">Chargement…</div>
   <div style="margin-top:14px;">
     <button class="btn" id="btn-add-device">+ Ajouter un appareil</button>
+  </div>
+</div>
+
+<div id="device-edit" class="card hidden">
+  <h2>Modifier l'appareil</h2>
+  <label class="field-label" for="edit-name-input">Nom</label>
+  <input type="text" id="edit-name-input" placeholder="ex: Volet salon terrasse">
+
+  <div id="edit-invert-row" class="checkbox-row hidden">
+    <input type="checkbox" id="edit-invert-checkbox">
+    <label for="edit-invert-checkbox">Inverser le sens (câblage à l'envers)</label>
+  </div>
+
+  <div id="edit-banner" class="banner hidden"></div>
+
+  <div style="margin-top:10px;">
+    <button class="btn" id="btn-edit-save">Enregistrer</button>
+    <button class="btn secondary" id="btn-edit-cancel">Annuler</button>
   </div>
 </div>
 
@@ -176,6 +202,7 @@
     listenPoll: null,
     candidate: null,         // {channel_id, channel_source, protocol_name}
     kind: null,
+    editingDevice: null,    // device object en cours d'edition (cf. openEditDevice)
   };
 
   var boxesCache = [];
@@ -207,10 +234,105 @@
       res.body.forEach(function (d) {
         var row = document.createElement("div");
         row.className = "device-row";
-        row.innerHTML = "<span>" + d.friendly_name + "</span><span class='muted'>" +
+
+        var info = document.createElement("span");
+        info.className = "device-info";
+        info.innerHTML = "<span>" + d.friendly_name + "</span><span class='muted'> · " +
           d.kind + " · " + (d.protocol_name || "?") + "</span>";
+
+        var actions = document.createElement("span");
+        actions.className = "device-actions";
+
+        var editBtn = document.createElement("button");
+        editBtn.className = "icon-btn";
+        editBtn.textContent = "Modifier";
+        editBtn.addEventListener("click", function () { openEditDevice(d); });
+
+        var delBtn = document.createElement("button");
+        delBtn.className = "icon-btn danger";
+        delBtn.textContent = "Supprimer";
+        delBtn.addEventListener("click", function () { deleteDevice(d); });
+
+        actions.appendChild(editBtn);
+        actions.appendChild(delBtn);
+        row.appendChild(info);
+        row.appendChild(actions);
         list.appendChild(row);
       });
+    });
+  }
+
+  function openEditDevice(d) {
+    state.editingDevice = d;
+    $("edit-name-input").value = d.friendly_name;
+    if (d.domain === "cover") {
+      $("edit-invert-checkbox").checked = !!(d.options && d.options.invert);
+      show("edit-invert-row");
+    } else {
+      hide("edit-invert-row");
+    }
+    hide("edit-banner");
+    show("device-edit");
+    $("device-edit").scrollIntoView({ behavior: "smooth", block: "nearest" });
+  }
+
+  $("btn-edit-cancel").addEventListener("click", function () {
+    state.editingDevice = null;
+    hide("device-edit");
+  });
+
+  $("btn-edit-save").addEventListener("click", function () {
+    var d = state.editingDevice;
+    if (!d) return;
+    var friendlyName = $("edit-name-input").value.trim();
+    var banner = $("edit-banner");
+    if (!friendlyName) {
+      banner.className = "banner error";
+      banner.textContent = "Le nom ne peut pas être vide.";
+      show(banner.id);
+      return;
+    }
+    var payload = { friendly_name: friendlyName };
+    if (d.domain === "cover") {
+      // Fusion avec les options existantes : cette UI ne modifie que
+      // "invert", les autres cles eventuelles (device_class, event_types...)
+      // ne doivent pas etre perdues.
+      payload.options = Object.assign({}, d.options, { invert: $("edit-invert-checkbox").checked });
+    }
+
+    $("btn-edit-save").disabled = true;
+    api("api/devices/" + encodeURIComponent(d.key), {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    }).then(function (res) {
+      $("btn-edit-save").disabled = false;
+      if (!res.ok) {
+        banner.className = "banner error";
+        banner.textContent = "Erreur lors de la mise à jour.";
+        show(banner.id);
+        return;
+      }
+      state.editingDevice = null;
+      hide("device-edit");
+      loadDevices();
+    });
+  });
+
+  function deleteDevice(d) {
+    if (!window.confirm("Supprimer \"" + d.friendly_name + "\" ? Cette action est irréversible et retirera l'appareil de Home Assistant.")) {
+      return;
+    }
+    api("api/devices/" + encodeURIComponent(d.key), { method: "DELETE" }).then(function (res) {
+      if (!res.ok) {
+        window.alert("Erreur lors de la suppression.");
+        return;
+      }
+      if (state.editingDevice && state.editingDevice.key === d.key) {
+        state.editingDevice = null;
+        hide("device-edit");
+      }
+      loadDevices();
     });
   }
 
