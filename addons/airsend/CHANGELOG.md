@@ -1,6 +1,16 @@
 ## Unreleased
 
 ### Added
+
+### Changed
+
+### Fixed
+
+### Dependencies
+
+## 0.12.0 - 2026-07-14
+
+### Added
 - **ingress:** New Ingress UI for device search and addition (#29)
 
 ### Changed
