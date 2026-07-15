@@ -5,6 +5,16 @@
 ### Changed
 
 ### Fixed
+
+### Dependencies
+
+## 0.16.0 - 2026-07-15
+
+### Added
+
+### Changed
+
+### Fixed
 - **inclusion:** fix premature end of targeted RF listen session (#46)
 
 ### Dependencies
