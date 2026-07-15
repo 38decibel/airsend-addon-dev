@@ -3,6 +3,16 @@
 ### Added
 
 ### Changed
+
+### Fixed
+
+### Dependencies
+
+## 0.15.0 - 2026-07-15
+
+### Added
+
+### Changed
 - [WIP] Fix all currently open issues in repository (#45)
 
 ### Fixed
