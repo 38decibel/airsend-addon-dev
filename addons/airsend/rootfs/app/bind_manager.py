@@ -89,7 +89,13 @@ class BoxBindHandle:
             try:
                 await self._task
             except asyncio.CancelledError:
-                raise
+                # Expected: we just cancelled this task ourselves. This is
+                # NOT the caller cancelling start_targeted_listen - re-raising
+                # here used to abort the whole method before ever reaching
+                # the targeted bind() below, silently skipping the
+                # global-bind restart in the finally block further down.
+                # Swallow it and proceed.
+                pass
             self._task = None
 
         try:
