@@ -5,6 +5,16 @@
 ### Changed
 
 ### Fixed
+
+### Dependencies
+
+## 0.18.0 - 2026-07-16
+
+### Added
+
+### Changed
+
+### Fixed
 - **mqtt:** define missing constants in diagnostic sensor helper (#49)
 
 ### Dependencies
