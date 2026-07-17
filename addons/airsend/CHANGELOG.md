@@ -5,6 +5,16 @@
 ### Changed
 
 ### Fixed
+
+### Dependencies
+
+## 0.21.1 - 2026-07-17
+
+### Added
+
+### Changed
+
+### Fixed
 - **catalog:** Add missing brands from official catalog (#53)
 
 ### Dependencies
