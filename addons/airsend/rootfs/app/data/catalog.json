@@ -99,7 +99,7 @@
       "channel_id": 1648
     }
   ],
-  "Beninc\\xe0": [
+  "Benincà": [
     {
       "protocol": "BNA",
       "channel_id": 25461
@@ -301,6 +301,10 @@
     {
       "protocol": "DIO2",
       "channel_id": 2200
+    },
+    {
+      "protocol": "DIO",
+      "channel_id": 1392
     }
   ],
   "Diagral": [
@@ -405,6 +409,12 @@
     {
       "protocol": "AOK",
       "channel_id": 880
+    }
+  ],
+  "Emylo": [
+    {
+      "protocol": "KGT",
+      "channel_id": 812
     }
   ],
   "Enjoy Motors": [
@@ -823,6 +833,12 @@
       "channel_id": 80
     }
   ],
+  "Legrand Celiane": [
+    {
+      "protocol": "IOBL",
+      "channel_id": 80
+    }
+  ],
   "Lifedom": [
     {
       "protocol": "LFD",
@@ -849,6 +865,16 @@
     {
       "protocol": "LTP",
       "channel_id": 2528
+    }
+  ],
+  "M-Soft": [
+    {
+      "protocol": "PLN2",
+      "channel_id": 10976
+    },
+    {
+      "protocol": "PLN",
+      "channel_id": 1648
     }
   ],
   "MSoft2": [
@@ -1051,6 +1077,12 @@
     {
       "protocol": "B28",
       "channel_id": 4912
+    }
+  ],
+  "Renosun": [
+    {
+      "protocol": "PFX",
+      "channel_id": 25455
     }
   ],
   "Roger": [
