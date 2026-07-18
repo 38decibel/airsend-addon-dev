@@ -3,6 +3,7 @@
 ### Added
 
 ### Changed
+- add third-party licensing section for Devmel SDK (#54)
 
 ### Fixed
 
