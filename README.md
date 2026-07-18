@@ -54,6 +54,46 @@ mqtt:
     password: passwd
 ```
 
+## Third-party components & licensing
+
+### AirSendWebService binary (Devmel)
+
+This addon embeds and executes the `AirSendWebService` binary, developed and
+owned by **Devmel**, to communicate with the AirSend Duo RF gateway. This
+binary is:
+
+- distributed **verbatim** (unmodified, unpatched) as part of this addon's
+  container image;
+- used exclusively through its **published local HTTP API**
+  (`http://127.0.0.1:33863`, see [`AirSendWebService.yaml`](./AirSendWebService.yaml)
+  for the OpenAPI spec), with no decompilation, patching, or extraction of
+  its internal code;
+- provided under the terms of the **Devmel SDK license**, a copy of which is
+  included in this repository at
+  [`THIRD_PARTY_LICENSES/devmel-sdk.txt`](./THIRD_PARTY_LICENSES/devmel-sdk.txt).
+
+This addon is an independent, community-built integration. **It is not
+officially affiliated with, endorsed by, or supported by Devmel.** Devmel's
+own official Home Assistant integration is
+[`hass_airsend`](https://github.com/devmel/hass_airsend).
+
+### No warranty on the embedded binary
+
+Per the Devmel SDK license, `AirSendWebService` is provided **as-is**, without
+any warranty, support, or guaranteed updates from Devmel. This addon
+inherits that limitation for the portions of functionality that depend on
+the binary. Issues related to this addon's own code (MQTT bridging, device
+discovery, Ingress UI, etc.) can be reported via this repository's issue
+tracker; issues intrinsic to the RF gateway firmware or `AirSendWebService`
+itself are outside this project's control.
+
+### Binary provenance
+
+- Source: 
+- Version: [version/build identifier embedded in the image]
+- Integrity: verified via GPG signature against Devmel's public key before
+  being baked into the container image (see `commands.txt` for the
+  verification command used during the build process)
 
 
 
