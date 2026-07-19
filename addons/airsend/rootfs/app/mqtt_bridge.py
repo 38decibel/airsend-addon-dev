@@ -13,6 +13,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+from dataclasses import dataclass
 
 import paho.mqtt.client as mqtt
 
@@ -72,6 +73,26 @@ _LEGACY_RELIABILITY_DISCOVERY_TOPICS = (
 _SENSOR_COMPONENT = "sensor"
 _DIAGNOSTIC_CATEGORY = "diagnostic"
 
+# Seuil (fraction de travel_time) au-dela duquel un STOP en cours de route
+# est considere comme ayant atteint sa destination (cf. _handle_cover_stop).
+# En-dessous, on considere que le volet n'a quasiment pas bouge et on revient
+# a l'etat oppose (celui d'avant le mouvement interrompu).
+_COVER_STOP_REACHED_RATIO = 0.5
+
+
+@dataclass
+class _CoverMotion:
+    """Minuteur de fin de course simulee en cours pour un cover "volet_roulant"
+    (cf. MqttBridge._start_cover_motion / _handle_cover_stop / _cover_motion_timer).
+    `started_at` est en secondes de l'horloge de la boucle asyncio (cf.
+    self._loop.time()), pas un timestamp mur - suffisant et plus simple ici
+    puisqu'on ne calcule qu'une duree ecoulee, jamais une date absolue."""
+
+    task: asyncio.Task
+    motion_state: str  # "opening" ou "closing"
+    started_at: float
+    travel_time_s: float
+
 
 class MqttBridge:
     def __init__(
@@ -95,10 +116,10 @@ class MqttBridge:
         self._loop = asyncio.get_event_loop()
         self._health_task: asyncio.Task | None = None
         # Minuteurs de fin de course simulee pour les covers "volet_roulant"
-        # (cf. _start_cover_motion / _cancel_cover_motion / _cover_motion_timer).
-        # Un seul task par device : une nouvelle commande de mouvement annule
+        # (cf. _start_cover_motion / _handle_cover_stop / _cover_motion_timer).
+        # Un seul motion par device : une nouvelle commande de mouvement annule
         # le precedent minuteur en cours avant d'en relancer un.
-        self._cover_tasks: dict[str, asyncio.Task] = {}
+        self._cover_tasks: dict[str, _CoverMotion] = {}
 
         self._mqtt = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, client_id="airsend-addon")
         if username:
@@ -124,8 +145,8 @@ class MqttBridge:
     def stop(self) -> None:
         if self._health_task is not None:
             self._health_task.cancel()
-        for task in self._cover_tasks.values():
-            task.cancel()
+        for motion in self._cover_tasks.values():
+            motion.task.cancel()
         self._mqtt.publish(AVAILABILITY_TOPIC, AVAILABILITY_OFFLINE, retain=True)
         self._mqtt.loop_stop()
         self._mqtt.disconnect()
@@ -447,28 +468,71 @@ class MqttBridge:
 
     def _apply_cover_motion(self, device: Device, module, motion: str | None) -> None:
         if motion == "stop":
-            self._cancel_cover_motion(device.key)
+            self._handle_cover_stop(device)
         elif motion is not None:
             self._start_cover_motion(device, motion, module.travel_time_s(device))
 
-    def _cancel_cover_motion(self, device_key: str) -> None:
-        task = self._cover_tasks.pop(device_key, None)
-        if task is not None:
-            task.cancel()
-
     def _start_cover_motion(self, device: Device, motion_state: str, travel_time_s: float) -> None:
-        self._cancel_cover_motion(device.key)
+        old = self._cover_tasks.pop(device.key, None)
+        if old is not None:
+            old.task.cancel()
         task = asyncio.create_task(self._cover_motion_timer(device, motion_state, travel_time_s))
-        self._cover_tasks[device.key] = task
+        self._cover_tasks[device.key] = _CoverMotion(
+            task=task,
+            motion_state=motion_state,
+            started_at=self._loop.time(),
+            travel_time_s=travel_time_s,
+        )
+
+    def _handle_cover_stop(self, device: Device) -> None:
+        """
+        Calcule et publie l'etat final d'un "volet_roulant" arrete en cours
+        de route, a partir du temps de course reellement ecoule.
+
+        IMPORTANT : ne publie jamais le payload "stopped" (cf. note dans
+        domains/cover.py.encode_optimistic_state) - le composant MQTT Cover
+        de HA le resoudrait en interne en "closed"/"open" selon la seule
+        direction en cours, sans tenir compte du temps ecoule, ce qui donne
+        un etat faux en cas d'arret precoce (constate empiriquement : STOP
+        1s apres le debut d'une fermeture de 20s affichait quand meme "closed").
+        """
+        motion = self._cover_tasks.pop(device.key, None)
+        if motion is None:
+            # Rien en cours (deja arrete) : on ne connait pas de nouvel etat,
+            # on laisse l'etat retenu tel quel plutot que de deviner.
+            return
+
+        motion.task.cancel()
+
+        elapsed = self._loop.time() - motion.started_at
+        ratio = elapsed / motion.travel_time_s if motion.travel_time_s > 0 else 1.0
+        reached_destination = ratio >= _COVER_STOP_REACHED_RATIO
+
+        if motion.motion_state == "opening":
+            final_state = "open" if reached_destination else "closed"
+        else:
+            final_state = "closed" if reached_destination else "open"
+
+        topics = DeviceTopics.for_device("cover", device.key)
+        self._mqtt.publish(topics.state, final_state, retain=True)
+        _LOGGER.debug(
+            "Cover %s stopped after %.1fs/%.1fs (%s) -> assumed %s",
+            device.key,
+            elapsed,
+            motion.travel_time_s,
+            motion.motion_state,
+            final_state,
+        )
 
     async def _cover_motion_timer(self, device: Device, motion_state: str, travel_time_s: float) -> None:
         """Attend `travel_time_s` puis publie l'etat final (open/closed) sur
-        un cover "volet_roulant". Annule via _cancel_cover_motion (nouvelle
-        commande ou STOP avant l'echeance) : dans ce cas asyncio.sleep leve
-        CancelledError, on ne publie alors aucun etat final, on nettoie juste
-        l'entree dans _cover_tasks avant de laisser l'exception se propager
-        (cf. finally, pas de except CancelledError ici - rien a y faire de
-        plus qu'un simple re-raise)."""
+        un cover "volet_roulant". Annule via _handle_cover_stop ou une
+        nouvelle commande de mouvement avant l'echeance : dans ce cas
+        asyncio.sleep leve CancelledError, on ne publie alors aucun etat final
+        ici (l'appelant s'en charge le cas echeant), on nettoie juste l'entree
+        dans _cover_tasks avant de laisser l'exception se propager (cf.
+        finally, pas de except CancelledError ici - rien a y faire de plus
+        qu'un simple re-raise)."""
         topics = DeviceTopics.for_device("cover", device.key)
         try:
             await asyncio.sleep(travel_time_s)
