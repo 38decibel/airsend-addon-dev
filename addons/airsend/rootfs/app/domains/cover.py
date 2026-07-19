@@ -142,13 +142,13 @@ def encode_optimistic_state(device, topic: str, payload: str) -> list[tuple[str,
         cmd = payload.upper()
 
         if cmd == "OPEN":
-            return [(topics.state, "open")]
+            return [(topics.state, "opening")]
 
         if cmd == "CLOSE":
-            return [(topics.state, "closed")]
+            return [(topics.state, "closing")]
 
         if cmd == "STOP":
-            return []
+            return [(topics.state, "stopped")]
 
     if topic == topics.set_position and device.kind == "niveau":
         try:
