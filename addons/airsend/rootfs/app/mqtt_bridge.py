@@ -94,6 +94,11 @@ class MqttBridge:
         self._settings = settings
         self._loop = asyncio.get_event_loop()
         self._health_task: asyncio.Task | None = None
+        # Minuteurs de fin de course simulee pour les covers "volet_roulant"
+        # (cf. _start_cover_motion / _cancel_cover_motion / _cover_motion_timer).
+        # Un seul task par device : une nouvelle commande de mouvement annule
+        # le precedent minuteur en cours avant d'en relancer un.
+        self._cover_tasks: dict[str, asyncio.Task] = {}
 
         self._mqtt = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, client_id="airsend-addon")
         if username:
@@ -119,6 +124,8 @@ class MqttBridge:
     def stop(self) -> None:
         if self._health_task is not None:
             self._health_task.cancel()
+        for task in self._cover_tasks.values():
+            task.cancel()
         self._mqtt.publish(AVAILABILITY_TOPIC, AVAILABILITY_OFFLINE, retain=True)
         self._mqtt.loop_stop()
         self._mqtt.disconnect()
@@ -429,6 +436,48 @@ class MqttBridge:
             for state_topic, state_payload in optimistic(device, topic, payload):
                 self._mqtt.publish(state_topic, state_payload, retain=True)
                 _LOGGER.debug("Published optimistic state %s = %s", state_topic, state_payload)
+
+        motion_fn = getattr(module, "motion_command", None)
+        if motion_fn is not None:
+            self._apply_cover_motion(device, module, motion_fn(device, topic, payload))
+
+    # ------------------------------------------------------------------ #
+    # Fin de course simulee (covers "volet_roulant" sans retour de position)
+    # ------------------------------------------------------------------ #
+
+    def _apply_cover_motion(self, device: Device, module, motion: str | None) -> None:
+        if motion == "stop":
+            self._cancel_cover_motion(device.key)
+        elif motion is not None:
+            self._start_cover_motion(device, motion, module.travel_time_s(device))
+
+    def _cancel_cover_motion(self, device_key: str) -> None:
+        task = self._cover_tasks.pop(device_key, None)
+        if task is not None:
+            task.cancel()
+
+    def _start_cover_motion(self, device: Device, motion_state: str, travel_time_s: float) -> None:
+        self._cancel_cover_motion(device.key)
+        task = asyncio.create_task(self._cover_motion_timer(device, motion_state, travel_time_s))
+        self._cover_tasks[device.key] = task
+
+    async def _cover_motion_timer(self, device: Device, motion_state: str, travel_time_s: float) -> None:
+        """Attend `travel_time_s` puis publie l'etat final (open/closed) sur
+        un cover "volet_roulant". Annule via _cancel_cover_motion (nouvelle
+        commande ou STOP avant l'echeance) : dans ce cas asyncio.sleep leve
+        CancelledError, on ne publie alors aucun etat final, on nettoie juste
+        l'entree dans _cover_tasks avant de laisser l'exception se propager
+        (cf. finally, pas de except CancelledError ici - rien a y faire de
+        plus qu'un simple re-raise)."""
+        topics = DeviceTopics.for_device("cover", device.key)
+        try:
+            await asyncio.sleep(travel_time_s)
+        finally:
+            self._cover_tasks.pop(device.key, None)
+
+        final_state = "open" if motion_state == "opening" else "closed"
+        self._mqtt.publish(topics.state, final_state, retain=True)
+        _LOGGER.debug("Cover %s reached assumed %s after %.1fs", device.key, final_state, travel_time_s)
 
     async def _handle_command(self, topic: str, payload: str) -> None:
         if topic == _RELIABILITY_COMMAND_TOPIC:
