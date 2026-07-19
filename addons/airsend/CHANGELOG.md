@@ -1,6 +1,7 @@
 ## Unreleased
 
 ### Added
+- **cover:** add configurable travel_time timer for volet_roulant end-of-travel state (#55)
 
 ### Changed
 

@@ -109,6 +109,12 @@
     <label for="edit-invert-checkbox">Inverser le sens (câblage à l'envers)</label>
   </div>
 
+  <div id="edit-travel-time-row" class="hidden">
+    <label class="field-label" for="edit-travel-time-input">Durée de course estimée (secondes)</label>
+    <input type="number" id="edit-travel-time-input" min="1" max="180" step="1">
+    <div class="muted">Temps approximatif pour aller complètement ouvert ↔ fermé. Utilisé pour estimer quand le volet a fini sa course (pas de retour de position réel).</div>
+  </div>
+
   <div id="edit-banner" class="banner hidden"></div>
 
   <div style="margin-top:10px;">
@@ -190,6 +196,12 @@
       <label for="invert-checkbox">Inverser le sens (câblage à l'envers)</label>
     </div>
 
+    <div id="travel-time-row" class="hidden">
+      <label class="field-label" for="travel-time-input">Durée de course estimée (secondes)</label>
+      <input type="number" id="travel-time-input" min="1" max="180" step="1" value="20">
+      <div class="muted">Temps approximatif pour aller complètement ouvert ↔ fermé. Modifiable plus tard.</div>
+    </div>
+
     <label class="field-label" for="name-input">Nom de l'appareil</label>
     <input type="text" id="name-input" placeholder="ex: Volet salon terrasse">
 
@@ -253,6 +265,11 @@
   };
 
   var boxesCache = [];
+
+  // Doit rester alignee avec DEFAULT_TRAVEL_TIME_S (domains/cover.py) : la
+  // valeur reelle par defaut est appliquee cote backend si l'option est
+  // absente, ceci n'est qu'un pre-remplissage d'affichage.
+  var DEFAULT_TRAVEL_TIME_S = 20;
 
   function $(id) { return document.getElementById(id); }
   function show(id) { $(id).classList.remove("hidden"); }
@@ -322,6 +339,12 @@
     } else {
       hide("edit-invert-row");
     }
+    if (d.domain === "cover" && d.kind === "volet_roulant") {
+      $("edit-travel-time-input").value = (d.options && d.options.travel_time) || DEFAULT_TRAVEL_TIME_S;
+      show("edit-travel-time-row");
+    } else {
+      hide("edit-travel-time-row");
+    }
     hide("edit-banner");
     show("device-edit");
     $("device-edit").scrollIntoView({ behavior: "smooth", block: "nearest" });
@@ -346,9 +369,14 @@
     var payload = { friendly_name: friendlyName };
     if (d.domain === "cover") {
       // Fusion avec les options existantes : cette UI ne modifie que
-      // "invert", les autres cles eventuelles (device_class, event_types...)
-      // ne doivent pas etre perdues.
+      // "invert" (et "travel_time" pour un volet_roulant), les autres cles
+      // eventuelles (device_class, event_types...) ne doivent pas etre perdues.
       payload.options = { ...d.options, invert: $("edit-invert-checkbox").checked };
+      if (d.kind === "volet_roulant") {
+        var rawTravelTime = Number.parseFloat($("edit-travel-time-input").value);
+        var travelTime = Number.isNaN(rawTravelTime) ? DEFAULT_TRAVEL_TIME_S : Math.min(180, Math.max(1, rawTravelTime));
+        payload.options.travel_time = travelTime;
+      }
     }
 
     $("btn-edit-save").disabled = true;
@@ -417,6 +445,8 @@
     $("name-input").value = "";
     $("invert-checkbox").checked = false;
     hide("invert-row");
+    $("travel-time-input").value = "20";
+    hide("travel-time-row");
     hide("confirm-banner");
     $("btn-confirm").disabled = true;
     document.querySelectorAll(".choice-box").forEach(function (b) { b.classList.remove("selected"); });
@@ -638,6 +668,13 @@
       } else {
         hide("invert-row");
       }
+      // "travel_time" ne concerne que "volet_roulant" : "niveau" a une
+      // position reelle 0-100% publiee directement, pas de fin de course a estimer.
+      if (state.kind === "volet_roulant") {
+        show("travel-time-row");
+      } else {
+        hide("travel-time-row");
+      }
       updateConfirmEnabled();
     });
   });
@@ -656,6 +693,10 @@
     var options = {};
     if (state.kind === "volet_roulant" || state.kind === "niveau") {
       options.invert = $("invert-checkbox").checked;
+    }
+    if (state.kind === "volet_roulant") {
+      var rawTravelTime = Number.parseFloat($("travel-time-input").value);
+      options.travel_time = Number.isNaN(rawTravelTime) ? DEFAULT_TRAVEL_TIME_S : Math.min(180, Math.max(1, rawTravelTime));
     }
     var friendlyName = $("name-input").value.trim();
     var banner = $("confirm-banner");
