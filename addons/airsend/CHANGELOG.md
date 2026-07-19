@@ -1,6 +1,16 @@
 ## Unreleased
 
 ### Added
+
+### Changed
+
+### Fixed
+
+### Dependencies
+
+## 0.24.0 - 2026-07-19
+
+### Added
 - **cover:** add configurable travel_time timer for volet_roulant end-of-travel state (#55)
 
 ### Changed
