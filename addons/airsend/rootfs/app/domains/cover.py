@@ -126,32 +126,40 @@ def encode_state(device, stype: str, svalue) -> list[tuple[str, str]]:
 
 def encode_optimistic_state(device, topic: str, payload: str) -> list[tuple[str, str]]:
     """
-    Publie un etat optimiste juste apres l'envoi reussi d'une commande, tant
-    qu'aucun retour RF reel ne confirme la position (cas normal pour un
-    rolling-code sans feedback).
+    Publie un état optimiste après une commande réussie.
 
-    Pour un volet_roulant, on ne connait pas la position finale reelle apres
-    OPEN/CLOSE/STOP (pas de confirmation RF) : on ne publie donc rien sur
-    `state` plutot que d'y mettre "unknown" (invalide pour le state_topic
-    MQTT cover, cf. note de module) ou une valeur "open"/"closed" supposee a
-    tort. Le dernier etat connu reste affiche ; assumed_state=true (cf.
-    discovery_config) garde deja les boutons actifs independamment de cet
-    etat affiche, donc rien n'est perdu cote UX.
+    Pour les volets roulants sans retour de position :
+    - OPEN  => état supposé open
+    - CLOSE => état supposé closed
+    - STOP  => on conserve le dernier état connu
+
+    La position réelle reste inconnue.
     """
+
     topics = DeviceTopics.for_device(COMPONENT, device.key)
 
-    if topic == topics.command:
-        # volet_roulant : aucune confirmation RF fiable de la position
-        # finale -> on ne publie rien (cf. docstring ci-dessus).
-        return []
+    if topic == topics.command and device.kind == "volet_roulant":
+        cmd = payload.upper()
+
+        if cmd == "OPEN":
+            return [(topics.state, "open")]
+
+        if cmd == "CLOSE":
+            return [(topics.state, "closed")]
+
+        if cmd == "STOP":
+            return []
 
     if topic == topics.set_position and device.kind == "niveau":
         try:
             position = max(0, min(100, int(payload)))
         except ValueError:
             return []
-        # Pour "niveau" avec feedback, on peut assumer la position demandee
-        return [(topics.position, str(position)), (topics.state, "open" if position > 0 else "closed")]
+
+        return [
+            (topics.position, str(position)),
+            (topics.state, "open" if position > 0 else "closed"),
+        ]
 
     return []
 
