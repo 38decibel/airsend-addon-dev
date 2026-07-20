@@ -1,15 +1,4 @@
-"""
-Domaine `button` - kind AirSend "1_bouton".
-
-Le composant MQTT `button` de HA est command-only (pas de state_topic dans le
-schema standard) : on presse, ca envoie une commande, un point c'est tout.
-
-Hypothese non confirmee : quel code STATE envoyer pour "presser" un appareil
-de type 1-bouton ? On utilise TOGGLE (18) par defaut - coherent avec le sens
-recu (thing_notes.py mappe TOGGLE recu vers "pressed") - mais aucune preuve
-qu'un vrai appareil 1-bouton attende ce code precis en emission plutot qu'un
-PROG/PING. A confirmer sur le terrain avant usage reel non-supervise.
-"""
+""" Domain `button` - kind AirSend "1_button" """
 
 from __future__ import annotations
 
