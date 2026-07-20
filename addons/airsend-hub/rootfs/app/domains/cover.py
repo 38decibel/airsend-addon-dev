@@ -50,10 +50,6 @@ _STATE_UP = 35
 _STATE_DOWN = 34
 _STATE_STOP = 17
 
-# Duree de course (secondes) par defaut pour un "volet_roulant" sans retour
-# de position RF, utilisee par mqtt_bridge.py pour simuler la fin de course
-# (cf. travel_time_s ci-dessous et _cover_motion_timer). Editable par device
-# via l'option "travel_time" (UI Ingress).
 DEFAULT_TRAVEL_TIME_S = 20.0
 _MIN_TRAVEL_TIME_S = 1.0
 _MAX_TRAVEL_TIME_S = 180.0
@@ -80,19 +76,6 @@ def discovery_config(device, topics: DeviceTopics, device_info: dict) -> dict:
             }
         )
     else:
-        # volet_roulant : pas de position fiable, HA doit se contenter du
-        # dernier etat open/closed connu, sans feedback continu. IMPORTANT :
-        # "assumed_state" n'existe PAS dans le schema MQTT Cover (verifie sur
-        # la doc officielle a jour - liste complete des champs de config) et
-        # est donc silencieusement ignore par HA, sans erreur ni log. Le vrai
-        # levier est "optimistic" : sans lui (valeur par defaut False des que
-        # state_topic est defini, cf. doc), HA desactive le bouton correspondant
-        # a l'etat courant (ex. "fermer" grise si is_closed=true), quelle que
-        # soit la carte utilisee (tuile ou entites) - confirme empiriquement
-        # sur le terrain (cf. discussion PR travel_time). "optimistic: true"
-        # reste compatible avec un state_topic deja defini (documente
-        # explicitement : "Optimistic mode can be forced, even if a
-        # state_topic / position_topic is defined").
         payload["optimistic"] = True
 
     return payload
@@ -129,15 +112,8 @@ def encode_state(device, stype: str, svalue) -> list[tuple[str, str]]:
 
     if device.kind == "volet_roulant":
         if stype == "level":
-            # DOWN/UP recus -> level 0/100 (cf. thing_notes.py)
             out.append((topics.state, "closed" if svalue == 0 else "open"))
         elif stype == "state" and svalue == "stop":
-            # STOP recu depuis une telecommande physique tierce : la
-            # position reelle a ce moment est inconnue et "unknown" n'est
-            # pas un payload valide pour le state_topic MQTT cover (cf. note
-            # de module). On ne publie donc rien : le dernier etat open/closed
-            # connu reste affiche tel quel plutot que d'etre remplace par une
-            # valeur invalide ou une supposition non fondee.
             pass
 
     return out

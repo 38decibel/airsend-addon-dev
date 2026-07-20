@@ -26,16 +26,16 @@ DEFAULT_PATH = "/data/devices.json"
 
 @dataclass
 class Device:
-    key: str  # identifiant stable interne (slug genere a la creation)
-    box: str  # slug de la box (BoxConfig.slug)
+    key: str
+    box: str
     channel_id: int
     channel_source: int
     protocol_name: str | None
-    kind: str  # "1_bouton" | "on_off" | "volet_roulant" | "niveau"
-    domain: str  # "button" | "switch" | "cover" | "sensor" | "binary_sensor" | "event"
+    kind: str
+    domain: str
     friendly_name: str
     options: dict[str, Any] = field(default_factory=dict)
-    source_of_creation: str = "manual"  # "rf_listen" | "manual" | "cloud_import"
+    source_of_creation: str = "manual"
 
     def match_key(self) -> tuple[str, int, int]:
         return (self.box, self.channel_id, self.channel_source)
@@ -48,9 +48,6 @@ class DeviceRegistry:
         self._by_match: dict[tuple[str, int, int], Device] = {}
         self.load()
 
-    # ------------------------------------------------------------------ #
-    # Persistance
-    # ------------------------------------------------------------------ #
 
     def load(self) -> None:
         if not os.path.exists(self._path):
@@ -93,9 +90,6 @@ class DeviceRegistry:
                 os.remove(tmp_path)
             raise
 
-    # ------------------------------------------------------------------ #
-    # API
-    # ------------------------------------------------------------------ #
 
     def match(self, box_slug: str, channel_id: int, channel_source: int) -> Device | None:
         return self._by_match.get((box_slug, channel_id, channel_source))

@@ -84,17 +84,6 @@ class AirSendClient:
     def __init__(self, base_url: str = "http://127.0.0.1:33863") -> None:
         self._base_url = base_url.rstrip("/")
         self._session: aiohttp.ClientSession | None = None
-        # Confirme empiriquement le 2026-07-11 : AirSendWebService retourne
-        # 500 (corps vide) des qu'un peu trop de /airsend/transfer arrivent
-        # en concurrence (2 simultanes passent, au-dela ca casse - limite
-        # exacte non garantie stable). D'ou ce verrou strict (1 seul
-        # transfer en vol a la fois). Verrou GLOBAL au client (pas par box)
-        # car un seul process AirSendWebService sert potentiellement
-        # plusieurs box (cf. docstring de la classe) - la contention
-        # observee n'a ete testee qu'avec une seule box configuree, donc on
-        # ne sait pas si la limite est par-box (radio physique) ou globale
-        # au service. A revalider si une 2e box est ajoutee un jour : un
-        # verrou par-box serait faux si la limite s'avere globale.
         self._transfer_lock = asyncio.Lock()
 
     def start(self) -> None:
@@ -113,9 +102,6 @@ class AirSendClient:
     async def __aexit__(self, *_exc: Any) -> None:
         await self.close()
 
-    # ------------------------------------------------------------------ #
-    # Bas niveau
-    # ------------------------------------------------------------------ #
 
     async def _request(
         self,
@@ -147,17 +133,11 @@ class AirSendClient:
         except aiohttp.ClientError as exc:
             raise AirSendError(f"Connection error calling {url}: {exc}") from exc
 
-    # ------------------------------------------------------------------ #
-    # Service
-    # ------------------------------------------------------------------ #
 
     async def get_status(self) -> dict:
         """GET /service/status - version du service, pas d'auth requise."""
         return await self._request("GET", "/service/status")
 
-    # ------------------------------------------------------------------ #
-    # Catalogue de protocoles
-    # ------------------------------------------------------------------ #
 
     async def list_channels(self, box: BoxConfig) -> list[dict]:
         """GET /channels - liste des ChannelInfo (protocoles RF supportes)."""
@@ -166,9 +146,6 @@ class AirSendClient:
             return result
         raise AirSendError("Unexpected /channels response shape")
 
-    # ------------------------------------------------------------------ #
-    # Ecoute / emission RF
-    # ------------------------------------------------------------------ #
 
     async def bind(
         self,
@@ -224,10 +201,6 @@ class AirSendClient:
         }
         if callback_url is not None:
             body["callback"] = callback_url
-        # Serialisation stricte : cf. commentaire sur self._transfer_lock
-        # dans __init__. Sans ca, une rafale de commandes (ex. "fermer tous
-        # les volets" depuis HA) declenche plusieurs /airsend/transfer
-        # concurrents et AirSendWebService en 500 une partie d'entre eux.
         async with self._transfer_lock:
             return await self._request("POST", "/airsend/transfer", box=box, json_body=body)
 

@@ -39,44 +39,20 @@ _BIND_DURATION_COMMAND_TOPIC = "airsend/settings/bind_duration/set"
 _BIND_DURATION_STATE_TOPIC = "airsend/settings/bind_duration/state"
 _BIND_DURATION_DISCOVERY_TOPIC = "homeassistant/number/bind_duration_airsend/config"
 
-# Legacy : le switch "Mode inclusion" (switch.mode_inclusion) a existe
-# jusqu'a la restructuration "1 device HA par element RF + inclusion
-# exclusivement via l'UI Ingress" - retire car il n'exposait plus de flow
-# utilisable seul (la confirmation d'un candidat en device est desormais
-# verrouillee a une session d'ecoute Ingress, cf. inclusion_api.py). Le
-# mecanisme interne (InclusionState.active, candidats) reste utilise par
-# inclusion_api.py + callback_server.py, seule l'exposition MQTT disparait.
-# On garde ces anciens topics ici UNIQUEMENT pour les vider au demarrage
-# (retrait propre chez les utilisateurs deja installes), comme pour
-# _LEGACY_RELIABILITY_DISCOVERY_TOPICS ci-dessous.
 _LEGACY_INCLUSION_DISCOVERY_TOPICS = (
     "homeassistant/switch/inclusion_mode_airsend/config",
-    "homeassistant/switch/airsend_inclusion_mode/config",  # forme encore plus ancienne
+    "homeassistant/switch/airsend_inclusion_mode/config",
 )
 _LEGACY_INCLUSION_STATE_TOPIC = "airsend/inclusion/state"
 
-# Legacy : l'entite "fiabilite minimale" (number.reliability_min) a existe
-# jusqu'a la v0.1.11 puis a ete retiree (cf. callback_server.py - la borne
-# basse est desormais fixe a 6, alignee sur jeeAirSend.php/Jeedom, non
-# ajustable). On garde les anciens topics de discovery ici UNIQUEMENT pour
-# publier une chaine vide dessus au demarrage (retrait propre de l'entite
-# chez les utilisateurs deja installes) - cf. _cleanup_legacy_discovery_topics().
-# _RELIABILITY_COMMAND_TOPIC est conserve tel quel (non renomme) uniquement
-# pour reconnaitre et ignorer proprement d'anciens messages retenus sur ce
-# topic (cf. _on_message) - pas une entite active.
 _LEGACY_RELIABILITY_DISCOVERY_TOPICS = (
     "homeassistant/number/reliability_min_airsend/config",
     "homeassistant/number/airsend_reliability_min/config",
 )
 
-# Utilisees par _diagnostic_sensor_topics_and_config (cf. publish_box_diagnostics).
 _SENSOR_COMPONENT = "sensor"
 _DIAGNOSTIC_CATEGORY = "diagnostic"
 
-# Seuil (fraction de travel_time) au-dela duquel un STOP en cours de route
-# est considere comme ayant atteint sa destination (cf. _handle_cover_stop).
-# En-dessous, on considere que le volet n'a quasiment pas bouge et on revient
-# a l'etat oppose (celui d'avant le mouvement interrompu).
 _COVER_STOP_REACHED_RATIO = 0.5
 
 
@@ -89,7 +65,7 @@ class _CoverMotion:
     puisqu'on ne calcule qu'une duree ecoulee, jamais une date absolue."""
 
     task: asyncio.Task
-    motion_state: str  # "opening" ou "closing"
+    motion_state: str
     started_at: float
     travel_time_s: float
 
@@ -115,10 +91,6 @@ class MqttBridge:
         self._settings = settings
         self._loop = asyncio.get_event_loop()
         self._health_task: asyncio.Task | None = None
-        # Minuteurs de fin de course simulee pour les covers "volet_roulant"
-        # (cf. _start_cover_motion / _handle_cover_stop / _cover_motion_timer).
-        # Un seul motion par device : une nouvelle commande de mouvement annule
-        # le precedent minuteur en cours avant d'en relancer un.
         self._cover_tasks: dict[str, _CoverMotion] = {}
 
         self._mqtt = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, client_id="airsend-addon")
@@ -133,9 +105,6 @@ class MqttBridge:
         self._host = host
         self._port = port
 
-    # ------------------------------------------------------------------ #
-    # Connexion
-    # ------------------------------------------------------------------ #
 
     async def start(self) -> None:
         self._mqtt.connect_async(self._host, self._port)
@@ -156,11 +125,9 @@ class MqttBridge:
         client.publish(AVAILABILITY_TOPIC, AVAILABILITY_ONLINE, retain=True)
         client.subscribe("airsend/+/set")
         client.subscribe("airsend/+/set_position")
-        client.subscribe(_RELIABILITY_COMMAND_TOPIC)  # entite retiree, cf. constante
+        client.subscribe(_RELIABILITY_COMMAND_TOPIC)
         client.subscribe(_BIND_DURATION_COMMAND_TOPIC)
         self._cleanup_legacy_discovery_topics()
-        # Republie la discovery + le dernier etat connu de tous les devices a
-        # chaque (re)connexion : couvre le cas d'un broker/HA redemarre.
         for device in self._registry.all():
             self.publish_discovery(device)
         self._publish_bind_duration_discovery()
@@ -197,9 +164,6 @@ class MqttBridge:
             legacy_ipv4_topic = f"homeassistant/sensor/airsend_{box.slug}_ipv4/config"
             self._mqtt.publish(legacy_ipv4_topic, "", retain=True)
 
-    # ------------------------------------------------------------------ #
-    # Bloc `device` par box (nom reel + modele detecte + MAC)
-    # ------------------------------------------------------------------ #
 
     def _box_model(self, box_slug: str) -> str | None:
         is_duo = self._catalog.is_duo_best_effort(box_slug)
@@ -207,7 +171,7 @@ class MqttBridge:
             return "AirSend Duo"
         if is_duo is False:
             return "AirSend"
-        return None  # catalogue pas encore recupere
+        return None
 
     def _device_info_for_box(self, box_slug: str) -> dict:
         box = self._boxes_by_slug.get(box_slug)
@@ -238,9 +202,6 @@ class MqttBridge:
         configuree tant qu'on ne gere qu'un etat global (pas encore per-box)."""
         return next(iter(self._boxes_by_slug), None)
 
-    # ------------------------------------------------------------------ #
-    # Entite systeme : reglages (bloc "Configuration")
-    # ------------------------------------------------------------------ #
 
     def _publish_bind_duration_discovery(self) -> None:
         box_slug = self._primary_box_slug()
@@ -272,9 +233,6 @@ class MqttBridge:
     def _publish_bind_duration_state(self) -> None:
         self._mqtt.publish(_BIND_DURATION_STATE_TOPIC, str(int(self._settings.bind_duration_s)), retain=True)
 
-    # ------------------------------------------------------------------ #
-    # Diagnostics par box (IPv4) - bloc "Diagnostic"
-    # ------------------------------------------------------------------ #
 
     def _diagnostic_sensor_topics_and_config(
         self, box: BoxConfig, suffix: str, name: str, extra: dict | None = None
@@ -353,9 +311,6 @@ class MqttBridge:
             await self._refresh_box_service_health()
             await asyncio.sleep(interval_s)
 
-    # ------------------------------------------------------------------ #
-    # Discovery (appareils RF)
-    # ------------------------------------------------------------------ #
 
     def publish_discovery(self, device: Device) -> None:
         module = get_domain_module(device.domain)
@@ -373,11 +328,8 @@ class MqttBridge:
         if module is None:
             return
         topics = DeviceTopics.for_device(module.COMPONENT, device.key)
-        self._mqtt.publish(topics.discovery, "", retain=True)  # payload vide = suppression cote HA
+        self._mqtt.publish(topics.discovery, "", retain=True)
 
-    # ------------------------------------------------------------------ #
-    # Etat sortant (RF -> MQTT)
-    # ------------------------------------------------------------------ #
 
     def publish_state(self, device_key: str, stype: str, svalue: object, channel: dict) -> None:
         device = self._registry.get(device_key)
@@ -393,13 +345,8 @@ class MqttBridge:
             self._mqtt.publish(topic, payload, retain=True)
             _LOGGER.debug("Published state %s = %s", topic, payload)
 
-    # ------------------------------------------------------------------ #
-    # Commande entrante (MQTT -> RF / reglages)
-    # ------------------------------------------------------------------ #
 
     def _on_message(self, client, userdata, msg) -> None:
-        # Callback paho = thread reseau interne, on repasse sur la boucle
-        # asyncio pour pouvoir faire l'appel HTTP vers AirSendWebService.
         asyncio.run_coroutine_threadsafe(self._handle_command(msg.topic, msg.payload.decode()), self._loop)
 
     def _handle_bind_duration_command(self, payload: str) -> None:
@@ -446,12 +393,6 @@ class MqttBridge:
             _LOGGER.warning("Failed to send command for device %s: %s", device.key, exc)
             return
 
-        # Etat optimiste : la plupart des recepteurs RF (rolling-code
-        # notamment) ne renvoient aucune confirmation de position exploitable
-        # via le canal de callback (cf. callback_server.py, evenements avec
-        # uid ignores). Sans ca, l'entite resterait affichee dans son ancien
-        # etat indefiniment apres une commande reussie. C'est une
-        # approximation assumee, pas une lecture reelle de l'etat materiel.
         optimistic = getattr(module, "encode_optimistic_state", None)
         if optimistic is not None:
             for state_topic, state_payload in optimistic(device, topic, payload):
@@ -462,9 +403,6 @@ class MqttBridge:
         if motion_fn is not None:
             self._apply_cover_motion(device, module, motion_fn(device, topic, payload))
 
-    # ------------------------------------------------------------------ #
-    # Fin de course simulee (covers "volet_roulant" sans retour de position)
-    # ------------------------------------------------------------------ #
 
     def _apply_cover_motion(self, device: Device, module, motion: str | None) -> None:
         if motion == "stop":
@@ -498,8 +436,6 @@ class MqttBridge:
         """
         motion = self._cover_tasks.pop(device.key, None)
         if motion is None:
-            # Rien en cours (deja arrete) : on ne connait pas de nouvel etat,
-            # on laisse l'etat retenu tel quel plutot que de deviner.
             return
 
         motion.task.cancel()
@@ -545,9 +481,6 @@ class MqttBridge:
 
     async def _handle_command(self, topic: str, payload: str) -> None:
         if topic == _RELIABILITY_COMMAND_TOPIC:
-            # Entite retiree (cf. constante ci-dessus) : un message peut
-            # encore arriver une seule fois si HA avait un payload retenu
-            # sur ce topic avant la mise a jour. On l'ignore sciemment.
             _LOGGER.debug("Ignoring stale message on removed reliability_min topic")
         elif topic == _BIND_DURATION_COMMAND_TOPIC:
             self._handle_bind_duration_command(payload)

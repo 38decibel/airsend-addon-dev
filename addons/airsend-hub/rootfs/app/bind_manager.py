@@ -18,7 +18,6 @@ from runtime_settings import RuntimeSettings
 
 _LOGGER = logging.getLogger("airsend.bind_manager")
 
-# Marge de securite avant expiration du bind pour lancer le renouvellement.
 _RENEW_MARGIN_S = 60.0
 
 
@@ -97,12 +96,6 @@ class BoxBindHandle:
             try:
                 await self._task
             except asyncio.CancelledError:
-                # Expected: we just cancelled this task ourselves. This is
-                # NOT the caller cancelling start_targeted_listen - re-raising
-                # here used to abort the whole method before ever reaching
-                # the targeted bind() below, silently skipping the
-                # global-bind restart in the finally block further down.
-                # Swallow it and proceed.
                 pass
             self._task = None
 
@@ -115,7 +108,7 @@ class BoxBindHandle:
             )
             await asyncio.sleep(duration)
         finally:
-            self.start()  # relance systematiquement la boucle de bind global
+            self.start()
 
     async def _run(self) -> None:
         """Boucle de (re)bind avec backoff simple en cas d'echec (box offline,
@@ -135,7 +128,7 @@ class BoxBindHandle:
                     callback_url=self._callback_url,
                     duration=duration,
                 )
-                backoff = 5.0  # succes => on reset le backoff pour la prochaine erreur eventuelle
+                backoff = 5.0
                 sleep_for = max(duration - _RENEW_MARGIN_S, 5.0)
                 await asyncio.sleep(sleep_for)
             except asyncio.CancelledError:
@@ -148,7 +141,7 @@ class BoxBindHandle:
                     backoff,
                 )
                 await asyncio.sleep(backoff)
-                backoff = min(backoff * 2, 300.0)  # backoff exponentiel plafonne a 5 min
+                backoff = min(backoff * 2, 300.0)
 
 
 class BindManager:

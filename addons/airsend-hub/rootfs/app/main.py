@@ -39,23 +39,11 @@ from runtime_settings import RuntimeSettings
 _LOGGER = logging.getLogger("airsend.main")
 
 CALLBACK_PORT = 8126
-# AirSendWebService tourne dans le MEME conteneur que cette app Python (cf.
-# Dockerfile/run.sh), donc 127.0.0.1 est toujours la bonne cible pour le
-# callback - pas besoin (et pas souhaitable) de deviner une IP via une
-# connexion sortante vers un serveur externe (8.8.8.8).
 CALLBACK_HOST = "127.0.0.1"
 
-# Port du formulaire web Ingress (ajout d'appareils, cf. inclusion_api.py) -
-# DOIT correspondre a "ingress_port" dans config.yaml. Contrairement au
-# callback server, ce serveur doit ecouter sur toutes les interfaces
-# (0.0.0.0) : c'est le Supervisor qui proxy les requetes Ingress depuis
-# l'exterieur du conteneur vers ce port, pas un simple usage loopback.
 INGRESS_PORT = 8127
 INGRESS_HOST = "0.0.0.0"
 
-# Valeur par defaut du champ "name" dans config.yaml : si l'utilisateur ne l'a
-# pas modifie, on derive un nom lisible depuis la MAC de la box plutot que de
-# publier une entite MQTT nommee litteralement "AIRSEND_".
 _DEFAULT_NAME_PREFIX = "AIRSEND_"
 
 
@@ -78,9 +66,6 @@ def _load_boxes() -> list[BoxConfig]:
         _LOGGER.exception("BOXES_JSON is not valid JSON, no box will be configured: %r", raw)
         return []
 
-    # bashio::config sur une liste d'objets peut renvoyer un objet nu plutot
-    # qu'un tableau a un element (observe en pratique avec une seule box
-    # configuree) - on normalise dans tous les cas vers une liste.
     if isinstance(parsed, dict):
         entries: list = [parsed]
     elif isinstance(parsed, list):
@@ -126,8 +111,6 @@ async def async_main() -> None:
     boxes = _load_boxes()
     if not boxes:
         _LOGGER.error("No AirSend box configured, nothing to do. Check addon configuration.")
-        # On ne quitte pas immediatement : ca permettrait a l'utilisateur de
-        # voir l'erreur dans les logs plutot qu'un crash-loop silencieux.
         while True:
             await asyncio.sleep(3600)
 
@@ -182,8 +165,6 @@ async def async_main() -> None:
     )
     await callback_server.start()
 
-    # Plain HTTP is intentional: both ends run inside the same container, on
-    # loopback only. AirSendWebService does not support HTTPS callbacks.
     _callback_scheme = "http"
     callback_base_url = f"{_callback_scheme}://{CALLBACK_HOST}:{CALLBACK_PORT}"
     _LOGGER.info("Callback base URL: %s", callback_base_url)
@@ -210,7 +191,7 @@ async def async_main() -> None:
     _LOGGER.info("Ready. Use the 'AirSend' Ingress panel to add devices.")
 
     try:
-        await asyncio.Event().wait()  # tourne indefiniment
+        await asyncio.Event().wait()
     finally:
         await ingress_runner.cleanup()
         await bind_manager.stop_all()

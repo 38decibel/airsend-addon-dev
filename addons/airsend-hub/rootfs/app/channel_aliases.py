@@ -22,9 +22,6 @@ pendant une session d'ecoute reelle), pas par extrapolation.
 from __future__ import annotations
 
 RECEIVE_ALIASES: dict[int, set[int]] = {
-    # PFX (Profalux, mais aussi Eveno/FranciaFlex/FliP/France fermetures qui
-    # partagent ce meme canal declare, cf. catalog_data.py) -> HPD ou KLQ868
-    # selon la trame reellement decodee par la box.
     25455: {25454, 25455, 25457},
 }
 

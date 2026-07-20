@@ -1,10 +1,5 @@
 name: PR title lint
 
-# Vérifie que le titre de la PR suit la convention utilisée pour générer
-# le CHANGELOG (voir .github/scripts/update_changelog.py). Ce workflow
-# tourne sur 'pull_request' (pas 'pull_request_target') : il ne fait
-# qu'un contrôle en lecture seule, donc pas besoin de permissions
-# d'écriture ni de secrets, même pour les PR venant de forks.
 
 on:
   pull_request:

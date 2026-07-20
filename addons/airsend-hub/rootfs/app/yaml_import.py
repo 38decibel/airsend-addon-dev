@@ -112,7 +112,6 @@ def parse_airsend_yaml(
     for friendly_name, entry in yaml_devices.items():
         channel = entry.get("channel")
         if channel is None:
-            # Gateway/box entry itself (type: 0), not a device.
             continue
 
         channel_id = channel.get("id")

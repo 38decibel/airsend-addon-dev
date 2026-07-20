@@ -252,23 +252,20 @@
   "use strict";
 
   var state = {
-    branch: null,           // "A" | "B"
-    box: null,               // box slug
+    branch: null,
+    box: null,
     brand: null,
     channelId: null,
     protocolName: null,
     sessionId: null,
     listenPoll: null,
-    candidate: null,         // {channel_id, channel_source, protocol_name}
+    candidate: null,
     kind: null,
-    editingDevice: null,    // device object en cours d'edition (cf. openEditDevice)
+    editingDevice: null,
   };
 
   var boxesCache = [];
 
-  // Doit rester alignee avec DEFAULT_TRAVEL_TIME_S (domains/cover.py) : la
-  // valeur reelle par defaut est appliquee cote backend si l'option est
-  // absente, ceci n'est qu'un pre-remplissage d'affichage.
   var DEFAULT_TRAVEL_TIME_S = 20;
 
   function $(id) { return document.getElementById(id); }
@@ -285,7 +282,6 @@
     });
   }
 
-  // ---------------------------------------------------------------- home
 
   function buildDeviceRow(d) {
     var row = document.createElement("div");
@@ -368,9 +364,6 @@
     }
     var payload = { friendly_name: friendlyName };
     if (d.domain === "cover") {
-      // Fusion avec les options existantes : cette UI ne modifie que
-      // "invert" (et "travel_time" pour un volet_roulant), les autres cles
-      // eventuelles (device_class, event_types...) ne doivent pas etre perdues.
       payload.options = { ...d.options, invert: $("edit-invert-checkbox").checked };
       if (d.kind === "volet_roulant") {
         var rawTravelTime = Number.parseFloat($("edit-travel-time-input").value);
@@ -422,7 +415,6 @@
     });
   }
 
-  // ---------------------------------------------------------------- wizard nav
 
   function resetWizard() {
     state.branch = null;
@@ -472,17 +464,12 @@
     loadDevices();
   }
 
-  // ---------------------------------------------------------------- branch choice
 
   document.querySelectorAll('[data-branch]').forEach(function (box) {
     box.addEventListener("click", function () {
       document.querySelectorAll('[data-branch]').forEach(function (b) { b.classList.remove("selected"); });
       box.classList.add("selected");
       state.branch = box.dataset.branch;
-      // "Passer cette etape" n'a de sens qu'en branche A : en branche B
-      // (pas de telecommande), il n'y a de toute facon aucune ecoute RF
-      // possible, la marque/protocole reste indispensable pour connaitre
-      // le channel_id a associer au channel_source saisi manuellement.
       if (state.branch === "A") { show("skip-brand-row"); } else { hide("skip-brand-row"); }
       showOnly(["step-catalog"]);
     });
@@ -499,7 +486,6 @@
     showOnly(["step-listen"]);
   });
 
-  // ---------------------------------------------------------------- catalog / brand search
 
   function showBrandSuggestions(res) {
     var box = $("brand-suggestions");
@@ -560,7 +546,6 @@
     state.protocolName = p.protocol;
     $("btn-catalog-next").disabled = false;
 
-    // Info anticipee (surtout utile en branche B) sur le risque rolling-code.
     api("api/channel/" + p.channel_id + "?box=" + encodeURIComponent(state.box)).then(function (res) {
       var banner = $("rolling-code-banner");
       if (res.body && res.body.rolling_code_risk) {
@@ -583,7 +568,6 @@
     }
   });
 
-  // ---------------------------------------------------------------- branch A: listen
 
   $("btn-listen-play").addEventListener("click", function () {
     $("btn-listen-play").disabled = true;
@@ -647,7 +631,6 @@
     });
   }
 
-  // ---------------------------------------------------------------- branch B: manual
 
   $("btn-manual-next").addEventListener("click", function () {
     var val = Number.parseInt($("manual-source").value, 10);
@@ -656,7 +639,6 @@
     showOnly(["step-kind"]);
   });
 
-  // ---------------------------------------------------------------- kind + name + confirm
 
   document.querySelectorAll('[data-kind]').forEach(function (box) {
     box.addEventListener("click", function () {
@@ -668,8 +650,6 @@
       } else {
         hide("invert-row");
       }
-      // "travel_time" ne concerne que "volet_roulant" : "niveau" a une
-      // position reelle 0-100% publiee directement, pas de fin de course a estimer.
       if (state.kind === "volet_roulant") {
         show("travel-time-row");
       } else {
@@ -756,7 +736,6 @@
     });
   }
 
-  // ---------------------------------------------------------------- import YAML
 
   var KIND_LABELS = {
     "1_bouton": "1 bouton", "on_off": "On / Off",
@@ -912,7 +891,6 @@
     });
   });
 
-  // ---------------------------------------------------------------- init
 
   loadBoxes().then(loadDevices);
 })();

@@ -48,9 +48,6 @@ def encode_state(device, stype: str, svalue) -> list[tuple[str, str]]:
     if stype == "level":
         return [(topics.state, "ON" if svalue and svalue > 0 else "OFF")]
     if stype == "toggle":
-        # Pas d'etat ON/OFF absolu deductible d'un simple toggle sans
-        # connaitre l'etat precedent cote box : on ignore plutot que de
-        # deviner un etat potentiellement faux.
         return []
     return []
 

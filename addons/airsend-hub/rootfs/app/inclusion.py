@@ -25,8 +25,8 @@ class Candidate:
     protocol_name: str | None
     first_seen: float = field(default_factory=time.time)
     last_seen: float = field(default_factory=time.time)
-    suggested_kind: str | None = None  # pre-rempli depuis protocol_domain_learned.json
-    hint_name: str | None = None  # pre-rempli si dispo (ex: import cloud)
+    suggested_kind: str | None = None
+    hint_name: str | None = None
 
     @property
     def match_key(self) -> tuple[str, int, int]:
