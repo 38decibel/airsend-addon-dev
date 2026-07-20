@@ -25,8 +25,6 @@ class Candidate:
     protocol_name: str | None
     first_seen: float = field(default_factory=time.time)
     last_seen: float = field(default_factory=time.time)
-    suggested_kind: str | None = None
-    hint_name: str | None = None
 
     @property
     def match_key(self) -> tuple[str, int, int]:
@@ -38,22 +36,12 @@ class InclusionState:
         self.active: bool = False
         self._candidates: dict[tuple[str, int, int], Candidate] = {}
 
-    def start(self) -> None:
-        self.active = True
-        _LOGGER.info("Inclusion mode ON")
-
-    def stop(self) -> None:
-        self.active = False
-        _LOGGER.info("Inclusion mode OFF")
-
     def upsert_candidate(
         self,
         box: str,
         channel_id: int,
         channel_source: int,
         protocol_name: str | None,
-        suggested_kind: str | None = None,
-        hint_name: str | None = None,
     ) -> Candidate:
         key = (box, channel_id, channel_source)
         existing = self._candidates.get(key)
@@ -66,8 +54,6 @@ class InclusionState:
             channel_id=channel_id,
             channel_source=channel_source,
             protocol_name=protocol_name,
-            suggested_kind=suggested_kind,
-            hint_name=hint_name,
         )
         self._candidates[key] = candidate
         _LOGGER.info(

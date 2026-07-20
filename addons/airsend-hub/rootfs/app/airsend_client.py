@@ -138,10 +138,3 @@ class AirSendClient:
             body["callback"] = callback_url
         async with self._transfer_lock:
             return await self._request("POST", "/airsend/transfer", box=box, json_body=body)
-
-    async def list_events(self, box: BoxConfig) -> list[dict]:
-        result = await self._request("GET", "/airsend/events", box=box)
-        return result if isinstance(result, list) else []
-
-    async def close_box(self, box: BoxConfig) -> None:
-        await self._request("GET", "/airsend/close", box=box)
