@@ -1,44 +1,4 @@
-"""
-Domaine `cover`.
-
-Deux kinds AirSend mappes ici (cf. table de decision Phase 1) :
-
-  - "volet_roulant" (Profalux, rolling code) : PAS de retour de position fiable.
-    On envoie UP/DOWN/STOP, on affiche un etat "assumed" (open/closed)
-    sans `current_position` - comportement HA standard pour les covers sans
-    feedback (`assumed_state: true`), plutot que d'inventer une position.
-
-  - "niveau" (ex: IOU/Somfy - "Lames Pergola") : un octet de position 0-255
-    (value_binsize=8, confirme par l'export cloud reel). On expose
-    current_position (0-100%) et set_position.
-
-  ATTENTION - "Lames Pergola" (pid 26848) s'est avere fonctionner en pratique
-  comme un "volet_roulant" classique (OPEN/CLOSE/STOP), pas en "niveau" - le
-  mapping protocole -> kind reste donc bien du ressort de l'utilisateur, pas
-  une deduction fiable depuis le pid seul (confirme sur le terrain).
-
-`invert` (option par device) : gere ICI, au niveau de la traduction
-commande/etat, PAS via un simple label HA (state_open/state_closed) comme
-dans une version anterieure - cette approche ne compensait que l'AFFICHAGE,
-pas le sens reel de la commande RF envoyee, ce qui ne resolvait pas le cas
-d'un volet physiquement monte/cable a l'envers (CLOSE qui ouvre reellement).
-Avec l'inversion faite ici, les valeurs "open"/"closed" publiees sur MQTT
-signifient toujours l'etat physique reel, quel que soit le cablage.
-
-IMPORTANT - le state_topic MQTT du composant `cover` de HA n'accepte QUE
-"open"/"closed"/"opening"/"closing"/"stopped" comme payload (cf.
-homeassistant/components/mqtt/cover.py) : "unknown" y est rejete (log
-"Payload is not supported"). Pour un volet_roulant sans confirmation RF
-fiable de la position finale, la bonne reponse cote HA est donc de NE RIEN
-PUBLIER sur `state` plutot que de publier une valeur inventee ou invalide -
-le dernier etat connu reste affiche, et `optimistic: true` (cf.
-discovery_config) garde deja les boutons Ouvrir/Fermer/Stop actifs
-independamment de cet etat affiche (PAS `assumed_state`, qui n'existe pas
-dans le schema MQTT Cover et est silencieusement ignore par HA - verifie sur
-la doc officielle, cf. commentaire dans discovery_config). Ne pas
-reintroduire de publication "unknown" ici sans avoir d'abord verifie la
-liste des payloads acceptes par le composant HA cible.
-"""
+""" Domain `cover` """
 
 from __future__ import annotations
 
@@ -86,17 +46,6 @@ def _is_inverted(device) -> bool:
 
 
 def encode_state(device, stype: str, svalue) -> list[tuple[str, str]]:
-    """
-    Interprete un ThingEvent RECU (typiquement une telecommande physique
-    tierce, cf. callback_server.py). IMPORTANT : `invert` n'est PAS applique
-    ici, volontairement - `invert` corrige la traduction de NOS PROPRES
-    commandes emises (cf. decode_command), pas necessairement la lecture d'un
-    evenement emis par un autre emetteur (la telecommande physique d'origine).
-    Rien ne prouve que ces deux sens soient affectes symetriquement par le
-    meme probleme de cablage/orientation - le confirmer avant d'etendre le
-    swap ici, plutot que de deviner et risquer d'inverser un affichage qui
-    etait correct.
-    """
     topics = DeviceTopics.for_device(COMPONENT, device.key)
     out: list[tuple[str, str]] = []
 
@@ -120,23 +69,6 @@ def encode_state(device, stype: str, svalue) -> list[tuple[str, str]]:
 
 
 def encode_optimistic_state(device, topic: str, payload: str) -> list[tuple[str, str]]:
-    """
-    Publie un état optimiste après une commande réussie.
-
-    Pour les volets roulants sans retour de position :
-    - OPEN  => état supposé opening (cf. mqtt_bridge._cover_motion_timer pour
-      la transition vers "open" au bout de travel_time)
-    - CLOSE => état supposé closing (idem, vers "closed")
-    - STOP  => rien n'est publié ici. IMPORTANT : ne PAS publier "stopped" -
-      le composant MQTT Cover de HA resout ce payload en interne en "closed"
-      si l'etat precedent etait "closing", "open" sinon, et ce QUELLE QUE
-      SOIT la duree de course deja ecoulee (verifie empiriquement : un STOP
-      apres 1s de fermeture affichait quand meme "closed"). C'est donc
-      mqtt_bridge._handle_cover_stop qui calcule et publie l'etat final,
-      a partir du temps ecoule vs travel_time (cf. discussion PR travel_time).
-
-    La position réelle reste inconnue.
-    """
 
     topics = DeviceTopics.for_device(COMPONENT, device.key)
 
@@ -189,14 +121,7 @@ def decode_command(device, topic: str, payload: str) -> dict | None:
 
 
 def travel_time_s(device) -> float:
-    """
-    Duree de course (secondes) a utiliser pour simuler la fin de course
-    d'un "volet_roulant" (cf. motion_command / mqtt_bridge._cover_motion_timer).
-    Valeur par device, option "travel_time" editable via l'UI Ingress ;
-    retombe sur DEFAULT_TRAVEL_TIME_S si absente ou invalide, et est bornee
-    pour eviter un minuteur degenere (0s, ou une duree demesuree en cas de
-    saisie erronee).
-    """
+
     try:
         value = float(device.options.get("travel_time", DEFAULT_TRAVEL_TIME_S))
     except (TypeError, ValueError):
@@ -205,17 +130,6 @@ def travel_time_s(device) -> float:
 
 
 def motion_command(device, topic: str, payload: str) -> str | None:
-    """
-    Traduit une commande MQTT entrante en mouvement pour le minuteur de fin
-    de course simulee : "opening"/"closing" pour lancer un minuteur (cf.
-    mqtt_bridge._start_cover_motion), "stop" pour l'annuler et calculer
-    l'etat final a partir du temps de course ecoule (cf.
-    mqtt_bridge._handle_cover_stop), None si non concerne.
-
-    Uniquement pertinent pour "volet_roulant" : "niveau" a une position reelle
-    deja publiee de facon synchrone (cf. encode_optimistic_state), pas de fin
-    de course a simuler.
-    """
     if device.kind != "volet_roulant":
         return None
 
