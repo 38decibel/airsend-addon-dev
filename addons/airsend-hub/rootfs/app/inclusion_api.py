@@ -1,44 +1,5 @@
 """
-Interface web Ingress pour l'ajout d'appareils, calquee sur le parcours de
-l'app cloud officielle (cf. historique de conception) :
-
-  Ajouter un appareil
-    -> A: "J'ai la telecommande" ou B: "Je n'ai pas la telecommande"
-    -> recherche marque (autocompletion, cf. catalog_data.py) - branche A
-       uniquement : bouton "Passer cette etape" pour une recherche generique
-       433MHz sans marque connue (channel_id=None, cf. plus bas)
-    -> si plusieurs protocoles pour la marque choisie: choix explicite
-       (ex. Somfy -> IOU/RFY/RTR)
-    -> A uniquement: bouton "Play" -> ecoute RF ciblee (cf.
-       bind_manager.start_targeted_listen), ou generique si marque passee
-       (bind sans filtre, candidats filtres a posteriori sur band != 2, cf.
-       _is_433) -> candidat(s) detecte(s)
-    -> choix du type de materiel (kind) + nom -> creation du device
-       (device_registry + discovery MQTT immediate)
-
-  ATTENTION - changement d'architecture assume : ceci ajoute une UI Ingress,
-  ce qui revient sur la decision initiale "MQTT discovery exclusively, no
-  Ingress UI" (cf. suivi de conception) - remplacement voulu, uniquement
-  pour ce flow de confirmation d'inclusion, le reste (etats, commandes)
-  continue de passer entierement par MQTT discovery.
-
-Cette API ne fait AUCUNE creation automatique/silencieuse d'entite : la
-confirmation utilisateur (nom + kind, cf. principe acte Phase 1) reste
-obligatoire dans tous les cas, y compris branche B.
-
-  Import YAML (migration depuis l'ancienne integration hass_airsend) :
-    -> l'utilisateur colle le contenu de son airsend.yaml
-    -> /api/import/preview : parsing + detection des conflits (meme
-       channel_id+channel_source qu'un device existant) - RIEN n'est ecrit
-    -> pour les conflits, kind/domain/options sont repris de l'existant
-       (PAS derives du protocole - cf. channel_id 26848 qui produit a la
-       fois des devices cover et switch selon l'appareil physique)
-    -> pour les devices vraiment nouveaux, l'utilisateur choisit kind/domain
-       manuellement (memes choix que le wizard normal, step-kind)
-    -> /api/import/commit : reutilise _create_device (donc meme generation
-       de cle, meme discovery MQTT, memes logs que le flow d'inclusion
-       normal) ; "overwrite" retire d'abord l'ancien device via le meme
-       chemin que _handle_delete_device avant de recreer
+Ingress web interface for adding devices, inspired by the workflow of the official cloud app.
 """
 
 from __future__ import annotations
@@ -71,7 +32,7 @@ _DEFAULT_LISTEN_DURATION_S = 20.0
 _MAX_LISTEN_DURATION_S = 60.0
 _SESSION_TTL_S = 600.0
 
-_FRIENDLY_NAME_EMPTY = "friendly_name vide"
+_FRIENDLY_NAME_EMPTY = "empty friendly_name"
 
 KIND_TO_DOMAIN: dict[str, str] = {
     "1_bouton": "button",
@@ -80,14 +41,12 @@ KIND_TO_DOMAIN: dict[str, str] = {
     "niveau": "cover",
 }
 
-
 def _slugify(text: str) -> str:
     slug = re.sub(r"[^a-z0-9]+", "_", text.strip().lower()).strip("_")
     return slug or "device"
 
 
 class ListenSession:
-    """Une session d'ecoute ciblee en cours (etape "Play" de la branche A)."""
 
     __slots__ = (
         "id", "box_slug", "channel_id", "expected_channels",
@@ -193,7 +152,7 @@ class InclusionApi:
         try:
             channel_id = int(request.match_info["channel_id"])
         except ValueError:
-            raise web.HTTPBadRequest(text="channel_id invalide")
+            raise web.HTTPBadRequest(text="invalid channel_id")
 
         entry = self._catalog.entry_for(box_slug, channel_id) if box_slug else None
         if entry is None:
@@ -214,11 +173,6 @@ class InclusionApi:
             self._sessions.pop(sid, None)
 
     def _is_433(self, box_slug: str, channel_id: int) -> bool:
-        """Utilise pour la recherche generique (etape marque passee) : on ne
-        peut pas filtrer le bind lui-meme par bande (cf. bind_manager.py), on
-        filtre donc les candidats a posteriori. Une entree absente du
-        catalogue (protocole non identifie) est gardee plutot que rejetee -
-        c'est justement le cas d'usage de ce mode."""
         entry = self._catalog.entry_for(box_slug, channel_id)
         return entry is None or entry.get("band") != BAND_868_MHZ
 
@@ -239,16 +193,16 @@ class InclusionApi:
 
         box = self._boxes.get(box_slug)
         if box is None:
-            raise web.HTTPBadRequest(text="box invalide")
+            raise web.HTTPBadRequest(text="invalid box")
         if channel_id is not None and not isinstance(channel_id, int):
-            raise web.HTTPBadRequest(text="channel_id invalide")
+            raise web.HTTPBadRequest(text="invalid channel_id")
 
         if box_slug in self._listening_boxes:
-            raise web.HTTPConflict(text="Une ecoute est deja en cours sur cette box")
+            raise web.HTTPConflict(text="a listening session is already in progress on this box.")
 
         handle = self._bind_manager.get_handle(box_slug)
         if handle is None:
-            raise web.HTTPBadRequest(text="box inconnue du bind_manager")
+            raise web.HTTPBadRequest(text="box unknown to the bind_manager")
 
         session = ListenSession(box_slug, channel_id, duration)
         self._sessions[session.id] = session
@@ -324,7 +278,7 @@ class InclusionApi:
     ) -> Device:
         domain = KIND_TO_DOMAIN.get(kind)
         if domain is None:
-            raise web.HTTPBadRequest(text=f"kind inconnu: {kind}")
+            raise web.HTTPBadRequest(text=f"unknown kind: {kind}")
 
         base_key = _slugify(friendly_name)
         key = base_key
@@ -354,19 +308,17 @@ class InclusionApi:
         return device
 
     async def _handle_confirm_device(self, request: web.Request) -> web.Response:
-        """Branche A : confirmation d'un candidat detecte pendant une session
-        d'ecoute (cf. _handle_start_listen)."""
         body = await request.json()
         session = self._sessions.get(body.get("session_id"))
         if session is None:
-            raise web.HTTPNotFound(text="session d'ecoute inconnue ou expiree")
+            raise web.HTTPNotFound(text="unknown or expired listening session")
 
         try:
             channel_source = int(body["channel_source"])
             kind = str(body["kind"])
             friendly_name = str(body["friendly_name"]).strip()
         except (KeyError, ValueError, TypeError):
-            raise web.HTTPBadRequest(text="champs manquants ou invalides")
+            raise web.HTTPBadRequest(text="missing or invalid fields")
 
         if not friendly_name:
             raise web.HTTPBadRequest(text=_FRIENDLY_NAME_EMPTY)
@@ -381,7 +333,7 @@ class InclusionApi:
             None,
         )
         if candidate is None:
-            raise web.HTTPNotFound(text="candidat introuvable (session expiree ?)")
+            raise web.HTTPNotFound(text="candidate not found (session expired?)")
 
         device = self._create_device(
             box_slug=session.box_slug,
@@ -398,19 +350,6 @@ class InclusionApi:
         return web.json_response({"key": device.key})
 
     async def _handle_manual_device(self, request: web.Request) -> web.Response:
-        """
-        Branche B : pas de telecommande, pas d'ecoute RF - l'utilisateur
-        saisit directement channel_id/channel_source. AUCUNE verification que
-        cette valeur correspond a un appareil reel n'est possible ici.
-
-        Si le protocole choisi utilise un compteur (rolling-code probable,
-        cf. /api/channel/<id>), on bloque une premiere fois avec un
-        avertissement explicite (409) plutot que de creer silencieusement un
-        device dont les toutes premieres commandes ont de fortes chances
-        d'echouer (compteur jamais synchronise faute de capture reelle) -
-        l'utilisateur peut passer outre en renvoyant la meme requete avec
-        confirm_rolling_code_risk=true.
-        """
         body = await request.json()
         try:
             box_slug = body["box"]
@@ -419,10 +358,10 @@ class InclusionApi:
             kind = str(body["kind"])
             friendly_name = str(body["friendly_name"]).strip()
         except (KeyError, ValueError, TypeError):
-            raise web.HTTPBadRequest(text="champs manquants ou invalides")
+            raise web.HTTPBadRequest(text="missing or invalid fields")
 
         if box_slug not in self._boxes:
-            raise web.HTTPBadRequest(text="box inconnue")
+            raise web.HTTPBadRequest(text="unknown box")
         if not friendly_name:
             raise web.HTTPBadRequest(text=_FRIENDLY_NAME_EMPTY)
 
@@ -433,10 +372,10 @@ class InclusionApi:
                 {
                     "warning": "rolling_code_risk",
                     "message": (
-                        "Ce protocole utilise un code tournant (rolling code). "
-                        "Sans capture reelle de votre telecommande, le compteur "
-                        "ne sera pas synchronise et les premieres commandes "
-                        "envoyees risquent d'echouer."
+                        "This protocol uses a rolling code. "
+                        "Without actually capturing your remote control, the counter "
+                        "will not be synchronized, and the first commands "
+                        "sent may fail."
                     ),
                 },
                 status=409,
@@ -455,15 +394,10 @@ class InclusionApi:
         return web.json_response({"key": device.key})
 
     async def _handle_update_device(self, request: web.Request) -> web.Response:
-        """Edition limitee a friendly_name/options (cf. reponse utilisateur :
-        pas de changement de kind/protocole/canal via cette route - cela
-        reviendrait a re-inclure un appareil different sous une identite
-        existante, avec le risque de desync device_registry <-> discovery
-        MQTT deja publiee que ca implique)."""
         key = request.match_info["key"]
         device = self._registry.get(key)
         if device is None:
-            raise web.HTTPNotFound(text="appareil inconnu")
+            raise web.HTTPNotFound(text="unknown device")
 
         body = await request.json()
 
@@ -475,7 +409,7 @@ class InclusionApi:
 
         options = body.get("options")
         if options is not None and not isinstance(options, dict):
-            raise web.HTTPBadRequest(text="options invalide")
+            raise web.HTTPBadRequest(text="invalid options")
 
         updated = self._registry.update(key, friendly_name=friendly_name, options=options)
         self._mqtt_bridge.publish_discovery(updated)
@@ -491,7 +425,7 @@ class InclusionApi:
         key = request.match_info["key"]
         device = self._registry.get(key)
         if device is None:
-            raise web.HTTPNotFound(text="appareil inconnu")
+            raise web.HTTPNotFound(text="unknown device")
 
         self._mqtt_bridge.remove_discovery(device)
         self._registry.remove(key)
@@ -503,11 +437,11 @@ class InclusionApi:
         body = await request.json()
         yaml_text = body.get("yaml_text", "")
         if not yaml_text.strip():
-            raise web.HTTPBadRequest(text="yaml_text vide")
+            raise web.HTTPBadRequest(text="empty yaml_text")
 
         box_slug = body.get("box") or next(iter(self._boxes), None)
         if box_slug not in self._boxes:
-            raise web.HTTPBadRequest(text="box inconnue")
+            raise web.HTTPBadRequest(text="unknown box")
 
         try:
             yaml_devices = load_yaml_devices(yaml_text)
@@ -537,26 +471,36 @@ class InclusionApi:
         )
         return web.json_response({"rows": rows, "available_kinds": list(KIND_TO_DOMAIN.keys())})
 
-    def _process_import_row(self, row: dict[str, Any]) -> tuple[str, str | None]:
-        """Process a single import row and return (outcome, error_message).
+    def _validate_import_row(self, row: dict[str, Any]) -> str | None:
+        action = row.get("action", "skip")
+        if action in ("skip", "keep_existing"):
+            return None
 
-        outcome is one of "added", "overwritten", "skipped".
-        error_message is non-None when the row could not be processed.
-        """
+        row_key = row.get("key", "?")
+        if action not in ("import", "overwrite"):
+            return f"{row_key}: unknown action '{action}'"
+
+        kind = row.get("kind")
+        friendly_name = str(row.get("friendly_name", "")).strip()
+        if not kind or not friendly_name:
+            return f"{row_key}: kind/friendly_name missing"
+        if kind not in KIND_TO_DOMAIN:
+            return f"{row_key}: unknown kind '{kind}'"
+        return None
+
+    def _process_import_row(self, row: dict[str, Any]) -> tuple[str, str | None]:
         action = row.get("action", "skip")
         row_key = row.get("key", "?")
 
         if action in ("skip", "keep_existing"):
             return "skipped", None
 
-        if action not in ("import", "overwrite"):
-            return "error", f"{row_key}: action inconnue '{action}'"
+        validation_error = self._validate_import_row(row)
+        if validation_error is not None:
+            return "error", validation_error
 
         kind = row.get("kind")
         friendly_name = str(row.get("friendly_name", "")).strip()
-        if not kind or not friendly_name:
-            return "error", f"{row_key}: kind/friendly_name manquant"
-
         removed_existing = self._maybe_remove_existing(row, row_key, action)
 
         try:
@@ -576,7 +520,6 @@ class InclusionApi:
         return "overwritten" if removed_existing else "added", None
 
     def _maybe_remove_existing(self, row: dict[str, Any], row_key: str, action: str) -> bool:
-        """Remove the existing device when action is 'overwrite'. Returns True if removed."""
         if action != "overwrite":
             return False
         existing_key = row.get("conflict_with") or row_key
@@ -591,7 +534,18 @@ class InclusionApi:
         body = await request.json()
         rows = body.get("rows")
         if not isinstance(rows, list):
-            raise web.HTTPBadRequest(text="'rows' doit etre une liste")
+            raise web.HTTPBadRequest(text="'rows' must be a list")
+
+        validation_errors: list[str] = []
+        for row in rows:
+            error = self._validate_import_row(row)
+            if error is not None:
+                validation_errors.append(error)
+
+        if validation_errors:
+            return web.json_response(
+                {"added": 0, "overwritten": 0, "skipped": 0, "errors": validation_errors}
+            )
 
         added = overwritten = skipped = 0
         errors: list[str] = []
@@ -631,4 +585,4 @@ def create_ingress_app(
         mqtt_bridge=mqtt_bridge,
     )
     return api.app
-
+  

@@ -5,6 +5,7 @@
 ### Changed
 
 ### Fixed
+- comments translated to eng (#60)
 
 ### Dependencies
 

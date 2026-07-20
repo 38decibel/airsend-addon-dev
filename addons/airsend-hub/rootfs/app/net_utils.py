@@ -1,4 +1,4 @@
-"""Utilitaires reseau divers."""
+"""Miscellaneous network utilities"""
 
 from __future__ import annotations
 
@@ -6,14 +6,7 @@ import ipaddress
 
 
 def mac_from_link_local(ipv6_str: str) -> str | None:
-    """
-    Derive l'adresse MAC-48 a partir d'une adresse IPv6 link-local generee en
-    modified EUI-64 (cas standard des boxes AirSend). Retourne None si
-    l'adresse n'est pas valide ou ne suit pas ce format (pas de "ff:fe" au
-    milieu de l'identifiant d'interface).
 
-    Exemple confirme : fe80::dcf6:e5ff:febb:5d74 -> de:f6:e5:bb:5d:74
-    """
     try:
         addr = ipaddress.IPv6Address(ipv6_str)
     except ValueError:

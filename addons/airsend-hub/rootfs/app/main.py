@@ -1,19 +1,8 @@
 """
-Point d'entree de l'addon.
+App entry point.
 
-Chaine complete : ecoute RF (bind_manager) -> callback (callback_server,
-filtre reliability) -> decodage (thing_notes) -> etat/discovery/commandes
-(mqtt_bridge) -> Home Assistant via MQTT discovery. L'inclusion d'un
-appareil (ecoute RF ciblee, nom + kind + options -> ecriture dans
-devices.json) se fait exclusivement via le formulaire Ingress (cf.
-inclusion_api.py) - changement d'architecture assume qui revient sur la
-decision initiale "no Ingress UI" (cf. suivi de conception), specifiquement
-pour ce flow. L'ancien switch MQTT "Mode inclusion" (mode d'ecoute large,
-non cible) a ete retire : il n'exposait plus de flow utilisable de facon
-autonome une fois l'Ingress en place (cf. mqtt_bridge.py,
-_LEGACY_INCLUSION_DISCOVERY_TOPICS pour le nettoyage cote HA). Le mecanisme
-interne qu'il pilotait (InclusionState.active, candidats) reste utilise par
-inclusion_api.py + callback_server.py pour l'ecoute ciblee.
+Main flow: RF listening (bind_manager) -> callback (callback_server, reliability filter) 
+-> decoding (thing_notes) -> state/discovery/commands (mqtt_bridge) -> Home Assistant via MQTT discovery.
 """
 
 from __future__ import annotations

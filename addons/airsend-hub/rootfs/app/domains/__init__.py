@@ -1,4 +1,4 @@
-"""Registre des modules de domaine disponibles, indexes par device.domain."""
+"""Registry of available domain modules, indexed by device.domain"""
 
 from __future__ import annotations
 

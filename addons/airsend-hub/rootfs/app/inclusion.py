@@ -1,11 +1,11 @@
 """
-Mode inclusion : quand actif, toute trame RF fiable dont (box, channel.id,
-channel.source) n'est pas deja dans le device_registry devient un "candidat"
-en attente de confirmation utilisateur (nom + kind + options), plutot que
-d'etre auto-cree silencieusement (contrairement a l'ancien hass_cb.php).
+Inclusion mode: when active, any valid RF frame where the tuple 
+(box, channel.id, channel.source) is not already in the `device_registry`
+becomes a "candidate" awaiting user confirmation (name + kind + options),
+rather than being silently auto-created.
 
-Ce module ne fait volontairement AUCUNE deduction automatique de domaine/kind:
-c'est toujours l'utilisateur qui tranche (cf. decisions actees Phase 1).
+This module intentionally makes NO automatic inferences regarding domain
+or kind: the user always makes the final decision.
 """
 
 from __future__ import annotations
