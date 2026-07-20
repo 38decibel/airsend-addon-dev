@@ -66,7 +66,7 @@ boxes:
 
 ```yaml
 system:
-    log_level: ERROR # Allowed values: `NONE`, `DEBUG`, `ERROR`, `WARNING`
+    log_level: ERROR # Allowed values: `ERROR`,`WARNING`,`INFO`,`DEBUG`
 ```
 
 ### Option: `MQTT` (optional)
