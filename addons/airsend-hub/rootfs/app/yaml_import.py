@@ -6,7 +6,6 @@ into devices.json-shaped preview rows, to be reviewed/edited by the user
 before being committed via InclusionApi._create_device.
 
 """
-import json
 import re
 import unicodedata
 
@@ -43,16 +42,6 @@ def load_yaml_devices(yaml_text):
         raise ValueError("'devices:' must be a mapping of name -> config")
 
     return devices
-
-
-def load_channel_name_map(channels_json_path):
-    """Convenience for standalone/offline use (tests, scripts) - not used
-    by the live integration, which sources protocol names from
-    ProtocolCatalog instead (single source of truth with the rest of the
-    addon)."""
-    with open(channels_json_path, encoding="utf-8") as f:
-        channels = json.load(f)
-    return {c["id"]: c["name"] for c in channels}
 
 
 def slugify(name):
