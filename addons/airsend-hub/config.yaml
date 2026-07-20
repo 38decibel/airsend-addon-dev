@@ -13,10 +13,6 @@ startup: services
 init: false
 boot: auto
 homeassistant_api: true
-# UI Ingress : formulaire d'ajout d'appareil (cf. inclusion_api.py). Revient
-# sur la decision initiale "no Ingress UI" (cf. suivi de conception),
-# uniquement pour ce flow de confirmation - le reste (etats, commandes)
-# continue de passer entierement par MQTT discovery.
 ingress: true
 ingress_port: 8127
 panel_icon: mdi:remote
@@ -55,9 +51,3 @@ schema:
 services:
   - "mqtt:need"
 
-# NOTE : l'option "auto_include" de l'addon d'origine (creation automatique
-# et silencieuse d'entites a la reception d'une trame inconnue) n'est PAS
-# reprise ici, deliberement : elle contredit la decision actee en Phase 1 de
-# toujours demander confirmation utilisateur (nom + kind + domaine) avant de
-# creer un appareil, pour eviter qu'un volet soit devine a tort comme une
-# lumiere (ou l'inverse) sans que personne ne s'en rende compte.

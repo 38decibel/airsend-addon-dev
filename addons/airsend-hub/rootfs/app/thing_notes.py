@@ -15,8 +15,6 @@ note.value quand type == STATE, valeurs entieres rencontrees en pratique :
 
 from __future__ import annotations
 
-# Table de secours si jamais value arrive en forme texte (enum string) plutot
-# qu'entiere - index = valeur entiere correspondante, "" = position inutilisee.
 _STATE_ENUM_TO_INT = {
     "PING": 1,
     "PROG": 2,
@@ -52,17 +50,17 @@ def _decode_state_note(raw_value) -> tuple[str, object] | None:
     ivalue = _as_int_state_value(raw_value)
     if ivalue is None:
         return None
-    if ivalue == 18:  # TOGGLE
+    if ivalue == 18:
         return "toggle", "pressed"
-    if ivalue in (19, 34):  # OFF, DOWN
+    if ivalue in (19, 34):
         return "level", 0
-    if ivalue in (20, 35):  # ON, UP
+    if ivalue in (20, 35):
         return "level", 100
-    if ivalue == 17:  # STOP
+    if ivalue == 17:
         return "state", "stop"
-    if ivalue in (33, 38):  # MIDDLE, USERPOSITION
+    if ivalue in (33, 38):
         return "state", "user"
-    return "state", ivalue  # etat non mappe explicitement, on garde brut
+    return "state", ivalue
 
 
 def _decode_temperature_note(raw_value) -> tuple[str, float] | None:
@@ -102,7 +100,6 @@ def _decode_data_note(raw_value) -> tuple[str, object]:
     return "data", raw_value
 
 
-# Dispatch table: note.type -> decoder function
 _NOTE_DECODERS = {
     0: _decode_state_note,
     1: _decode_data_note,

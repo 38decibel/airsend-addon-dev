@@ -55,8 +55,6 @@ from thing_notes import convert_notes_to_states
 
 _LOGGER = logging.getLogger("airsend.callback_server")
 
-# Signature du callback appele pour chaque etat decode et route vers un device connu.
-# (device_key, stype, svalue, channel) -> None
 StateSink = Callable[[str, str, object, dict], None]
 
 
@@ -84,8 +82,6 @@ class CallbackServer:
 
     @property
     def base_url_hint(self) -> str:
-        # Plain HTTP is intentional: this server is a local loopback target for
-        # AirSendWebService callbacks and is never exposed outside the container.
         scheme = "http"
         return f"{scheme}://<addon_ip>:{self._port}"
 
@@ -167,16 +163,9 @@ class CallbackServer:
             )
             return
 
-        # Body brut complet, INCONDITIONNEL (avant tout filtrage sur type ou
-        # reliability), pour voir le contenu thingnotes.notes - le
-        # channel_id/channel_source reste identique entre plusieurs boutons
-        # d'une meme telecommande (releve empirique du 2026-07-11), donc
-        # l'identite du bouton presse ne peut venir que d'ici. Log en INFO
-        # (visible sans LOG_LEVEL=DEBUG), sur les evenements non sollicites
-        # uniquement (pas de spam sur les acks de nos propres commandes).
         _LOGGER.info("raw_event_body box=%s channel=%s/%s body=%s", box_slug, channel_id, channel_source, json.dumps(event))
 
-        if event_type != 3:  # GOT uniquement
+        if event_type != 3:
             _LOGGER.debug(
                 "Interrupt event ignored (type=%s != GOT) on box=%s channel=%s/%s",
                 event_type, box_slug, channel_id, channel_source,
@@ -185,8 +174,6 @@ class CallbackServer:
 
         reliability = event.get("reliability")
 
-        # Echantillonnage empirique conserve (peu couteux, utile en cas de
-        # regression future ou de nouveau protocole a calibrer).
         catalog_entry = self._catalog.entry_for(box_slug, channel_id)
         _LOGGER.info(
             "reliability_sample value=%s protocol=%s band=%s box=%s channel=%s/%s",

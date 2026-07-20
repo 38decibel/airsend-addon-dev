@@ -16,9 +16,6 @@ jobs:
   changelog:
     runs-on: ubuntu-latest
     steps:
-      # Checkout du dépôt principal (main)
-      # C'est CE dépôt qui contient le script Python de confiance,
-      # y compris pour les PR venant de forks (pull_request_target).
       - name: Checkout repository
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
 
@@ -30,7 +27,6 @@ jobs:
         run: |
           python3 .github/scripts/update_changelog.py
 
-      # On bascule ensuite sur la branche de la PR pour committer dessus
       - name: Checkout PR branch
         env:
           PR_HEAD_REF: ${{ github.event.pull_request.head.ref }}

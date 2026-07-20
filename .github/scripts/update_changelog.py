@@ -28,7 +28,6 @@ TYPE_TO_SECTION = {
     "feat": "Added",
     "fix": "Fixed",
     "deps": "Dependencies",
-    # chore, docs, refactor, test, ci, perf, style, build -> Changed (default)
 }
 
 CONVENTIONAL_RE = re.compile(
@@ -56,9 +55,6 @@ def build_entry(title, pr_number, is_dependabot):
         section = TYPE_TO_SECTION.get(commit_type, "Changed")
         text = f"**{scope}:** {description}" if scope else description
     else:
-        # Title doesn't follow the convention. This should be caught by
-        # the pr-title-lint workflow before merge, but we still record
-        # something rather than silently dropping the entry.
         section, text = "Changed", title
 
     return section, f"- {text} (#{pr_number})"
@@ -89,7 +85,6 @@ def remove_existing_entry(unreleased_block, pr_number):
 def insert_entry(unreleased_block, section, line):
     marker = f"### {section}"
     if marker not in unreleased_block:
-        # Defensive: shouldn't happen given the fixed template.
         unreleased_block = unreleased_block.rstrip("\n") + f"\n\n{marker}\n"
     return unreleased_block.replace(marker, f"{marker}\n{line}", 1)
 
@@ -108,7 +103,7 @@ def main():
     unreleased_block = remove_existing_entry(unreleased_block, pr_number)
 
     if line in unreleased_block:
-        return  # Already up to date, nothing to write.
+        return
 
     unreleased_block = insert_entry(unreleased_block, section, line)
 

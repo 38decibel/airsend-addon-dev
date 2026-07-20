@@ -69,13 +69,10 @@ _WEB_DIR = Path(__file__).parent / "web"
 
 _DEFAULT_LISTEN_DURATION_S = 20.0
 _MAX_LISTEN_DURATION_S = 60.0
-_SESSION_TTL_S = 600.0  # purge des sessions non confirmees au-dela de 10 min
+_SESSION_TTL_S = 600.0
 
 _FRIENDLY_NAME_EMPTY = "friendly_name vide"
 
-# kind (choisi dans le formulaire) -> domain HA / MQTT (cf. domains/*.py et
-# device_registry.Device.kind/domain). "1_bouton" -> "button" existe deja
-# comme domaine command-only cote domains/button.py.
 KIND_TO_DOMAIN: dict[str, str] = {
     "1_bouton": "button",
     "on_off": "switch",
@@ -100,9 +97,6 @@ class ListenSession:
     def __init__(self, box_slug: str, channel_id: int | None, duration: float) -> None:
         self.id = uuid.uuid4().hex[:12]
         self.box_slug = box_slug
-        # None => "j'ai passe l'etape marque" (recherche generique 433MHz,
-        # cf. InclusionApi._session_accepts_channel) : pas de canal declare
-        # a partir duquel deriver des alias de reception.
         self.channel_id = channel_id
         self.expected_channels = expected_receive_channels(channel_id) if channel_id is not None else set()
         self.started_at = time.time()
@@ -138,18 +132,7 @@ class InclusionApi:
         self._catalog = catalog
         self._mqtt_bridge = mqtt_bridge
         self._sessions: dict[str, ListenSession] = {}
-        # Une seule ecoute ciblee a la fois par box : start_targeted_listen
-        # relance le bind global des sa propre fin, une 2e session en
-        # parallele sur la meme box se ferait donc couper l'herbe sous le
-        # pied par la 1ere sans ce garde-fou.
         self._listening_boxes: set[str] = set()
-        # Reference forte sur les tasks "ecoute ciblee" en cours (cf.
-        # _handle_start_listen). Sans ca, asyncio ne garde qu'une reference
-        # faible sur une task creee via create_task() : rien n'empeche le
-        # garbage collector de la couper avant sa fin (le `finally` de _run
-        # ne s'executerait alors jamais, laissant potentiellement la box
-        # sans bind global relance). Nettoyee automatiquement a la fin de
-        # chaque task via add_done_callback.
         self._background_tasks: set[asyncio.Task] = set()
 
         self.app = web.Application()
@@ -167,10 +150,6 @@ class InclusionApi:
         self.app.router.add_post("/api/import/commit", self._handle_import_commit)
         self.app.router.add_get("/{tail:.*}", self._handle_static)
 
-    # ------------------------------------------------------------------ #
-    # Pages statiques (formulaire HTML/JS/CSS, un seul fichier - pas
-    # d'outillage de build pour rester coherent avec le reste de l'addon)
-    # ------------------------------------------------------------------ #
 
     async def _handle_static(self, request: web.Request) -> web.Response:
         tail = request.match_info["tail"] or "index.html"
@@ -183,9 +162,6 @@ class InclusionApi:
             candidate = _WEB_DIR / "index.html"
         return web.FileResponse(candidate)
 
-    # ------------------------------------------------------------------ #
-    # Boxes / catalogue
-    # ------------------------------------------------------------------ #
 
     async def _handle_boxes(self, request: web.Request) -> web.Response:
         return web.json_response(
@@ -228,16 +204,10 @@ class InclusionApi:
                 "name": entry.get("name"),
                 "band": entry.get("band"),
                 "counter": entry.get("counter"),
-                # cf. channels.json : un `counter` non-nul indique un
-                # protocole a code tournant probable. Utilise cote UI pour
-                # avertir en branche B (pas de capture RF reelle possible).
                 "rolling_code_risk": bool(entry.get("counter")),
             }
         )
 
-    # ------------------------------------------------------------------ #
-    # Ecoute RF ciblee (branche A, bouton "Play")
-    # ------------------------------------------------------------------ #
 
     def _prune_stale_sessions(self) -> None:
         for sid in [sid for sid, s in self._sessions.items() if s.is_stale]:
@@ -270,10 +240,6 @@ class InclusionApi:
         box = self._boxes.get(box_slug)
         if box is None:
             raise web.HTTPBadRequest(text="box invalide")
-        # channel_id=None (absent ou null cote JSON) => recherche generique
-        # 433MHz suite au bouton "Passer cette etape" (cf. web/index.html) :
-        # pas d'erreur, on demarre juste un bind sans filtre (cf.
-        # bind_manager.start_targeted_listen).
         if channel_id is not None and not isinstance(channel_id, int):
             raise web.HTTPBadRequest(text="channel_id invalide")
 
@@ -344,9 +310,6 @@ class InclusionApi:
             }
         )
 
-    # ------------------------------------------------------------------ #
-    # Creation d'appareil (commun aux deux branches + import YAML)
-    # ------------------------------------------------------------------ #
 
     def _create_device(
         self,
@@ -420,11 +383,6 @@ class InclusionApi:
         if candidate is None:
             raise web.HTTPNotFound(text="candidat introuvable (session expiree ?)")
 
-        # IMPORTANT : c'est le canal REELLEMENT RECU (candidate.channel_id,
-        # ex. HPD 25454) qu'il faut enregistrer, pas le canal declare choisi
-        # par l'utilisateur (ex. PFX 25455, canal virtuel emission seule,
-        # cf. channel_aliases.py) - sinon device_registry.match() ne
-        # matchera plus jamais les futures trames recues de ce device.
         device = self._create_device(
             box_slug=session.box_slug,
             channel_id=candidate.channel_id,
@@ -520,8 +478,6 @@ class InclusionApi:
             raise web.HTTPBadRequest(text="options invalide")
 
         updated = self._registry.update(key, friendly_name=friendly_name, options=options)
-        # Meme domain/topics qu'a la creation (kind non modifiable ici) : un
-        # republish suffit, pas besoin de remove_discovery prealable.
         self._mqtt_bridge.publish_discovery(updated)
         _LOGGER.info(
             "Device %s updated via ingress UI (friendly_name=%s options=%s)",
@@ -537,17 +493,11 @@ class InclusionApi:
         if device is None:
             raise web.HTTPNotFound(text="appareil inconnu")
 
-        # Payload vide retenu sur le topic discovery = suppression cote HA
-        # (cf. mqtt_bridge.remove_discovery) - a faire AVANT de retirer du
-        # registre, sinon plus moyen de retrouver le domain/topics du device.
         self._mqtt_bridge.remove_discovery(device)
         self._registry.remove(key)
         _LOGGER.info("Device %s removed via ingress UI", key)
         return web.json_response({"key": key, "deleted": True})
 
-    # ------------------------------------------------------------------ #
-    # Import YAML (migration depuis hass_airsend / config legacy)
-    # ------------------------------------------------------------------ #
 
     async def _handle_import_preview(self, request: web.Request) -> web.Response:
         body = await request.json()
@@ -633,11 +583,6 @@ class InclusionApi:
         existing = self._registry.get(existing_key)
         if existing is None:
             return False
-        # Meme chemin que _handle_delete_device : on retire
-        # d'abord la discovery MQTT de l'ancien device avant de
-        # recreer, plutot qu'une mise a jour en place (cf.
-        # _handle_update_device : channel/kind ne sont pas
-        # editables sur un device existant par design).
         self._mqtt_bridge.remove_discovery(existing)
         self._registry.remove(existing_key)
         return True

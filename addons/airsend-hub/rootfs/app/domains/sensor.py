@@ -37,4 +37,4 @@ def encode_state(device, stype: str, svalue) -> list[tuple[str, str]]:
 
 
 def decode_command(device, topic: str, payload: str) -> dict | None:
-    return None  # lecture seule
+    return None

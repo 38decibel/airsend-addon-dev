@@ -36,8 +36,6 @@ def discovery_config(device, topics: DeviceTopics, device_info: dict) -> dict:
 
 
 def encode_state(device, stype: str, svalue) -> list[tuple[str, str]]:
-    # Command-only : aucun etat a republier meme si une trame arrive (par ex.
-    # une confirmation RF suite a notre propre commande).
     return []
 
 
