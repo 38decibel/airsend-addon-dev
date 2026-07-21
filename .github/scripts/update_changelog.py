@@ -15,6 +15,11 @@ workflow); the type maps to a changelog section:
 Entries are tagged with "(#<pr_number>)" so that editing a PR's title
 (which re-triggers this script) replaces the old entry instead of
 duplicating it.
+
+Section headers carry an icon (e.g. "### 🚀 Added") and are only created
+on demand, the first time an entry needs them: an empty "## Unreleased"
+block starts with no subsections at all. release.py mirrors this by
+stripping any subsection left empty once a version is cut.
 """
 
 from pathlib import Path
@@ -28,6 +33,13 @@ TYPE_TO_SECTION = {
     "feat": "Added",
     "fix": "Fixed",
     "deps": "Dependencies",
+}
+
+SECTION_ICONS = {
+    "Added": "🚀",
+    "Changed": "♻️",
+    "Fixed": "🐛",
+    "Dependencies": "📦",
 }
 
 CONVENTIONAL_RE = re.compile(
@@ -82,8 +94,45 @@ def remove_existing_entry(unreleased_block, pr_number):
     return "".join(line for line in lines if marker not in line)
 
 
+def strip_empty_sections(unreleased_block):
+    """Drop any '### ' subsection heading (icon or legacy plain form) that
+    has no content line before the next '### ' heading or the end of the
+    block. Runs on every invocation so a section emptied by
+    remove_existing_entry, or a legacy header predating the icons, never
+    lingers in the changelog."""
+
+    lines = unreleased_block.split("\n")
+    kept = []
+    i = 0
+    total = len(lines)
+
+    while i < total:
+        line = lines[i]
+        if not line.startswith("### "):
+            kept.append(line)
+            i += 1
+            continue
+
+        j = i + 1
+        has_content = False
+        while j < total and not lines[j].startswith("### "):
+            if lines[j].strip():
+                has_content = True
+            j += 1
+
+        if has_content:
+            kept.extend(lines[i:j])
+        i = j
+
+    return "\n".join(kept)
+
+
+def section_header(section):
+    return f"### {SECTION_ICONS[section]} {section}"
+
+
 def insert_entry(unreleased_block, section, line):
-    marker = f"### {section}"
+    marker = section_header(section)
     if marker not in unreleased_block:
         unreleased_block = unreleased_block.rstrip("\n") + f"\n\n{marker}\n"
     return unreleased_block.replace(marker, f"{marker}\n{line}", 1)
@@ -101,6 +150,7 @@ def main():
     before, unreleased_block, after = split_unreleased(content)
 
     unreleased_block = remove_existing_entry(unreleased_block, pr_number)
+    unreleased_block = strip_empty_sections(unreleased_block)
 
     if line in unreleased_block:
         return
