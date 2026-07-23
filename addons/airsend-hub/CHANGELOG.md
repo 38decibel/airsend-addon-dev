@@ -1,5 +1,7 @@
 ## Unreleased
 
+## 1.0.2 - 2026-07-23
+
 ### ♻️ Changed
 - add UI screenshots to README (#68)
 
