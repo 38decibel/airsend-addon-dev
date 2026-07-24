@@ -1,5 +1,7 @@
 ## Unreleased
 
+## 1.1.1 - 2026-07-24
+
 ### 🚀 Added
 - **web:** responsive card layout with progressive disclosure for YAML import preview (#70)
 
