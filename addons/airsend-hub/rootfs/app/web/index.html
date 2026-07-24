@@ -63,6 +63,10 @@
   .banner.warn { background: #3a2f14; border: 1px solid #6b5420; color: #e8c977; }
   .banner.error { background: #3a1414; border: 1px solid #6b2020; color: #ff9a9a; }
   .banner.ok { background: #123a22; border: 1px solid #1f6b3a; color: #7ee0a0; }
+  .banner.rolling-wip {
+    background: #3a1414; border: 2px solid #b23c3c; color: #ffd4d4;
+    font-size: 0.98rem; font-weight: 600; padding: 14px 16px; line-height: 1.4;
+  }
   .candidate {
     display: flex; justify-content: space-between; align-items: center;
     padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; margin-bottom: 6px;
@@ -200,6 +204,7 @@
 
   <div id="step-kind" class="hidden" style="margin-top:14px;">
     <h2 data-i18n="wizard.kind.title">Type de matériel</h2>
+    <div id="kind-rolling-banner" class="banner warn rolling-wip hidden"></div>
     <div class="btn-grid" id="kind-choices">
       <div class="choice-box" data-kind="1_bouton"><strong data-i18n="kind.1_bouton">1 bouton</strong></div>
       <div class="choice-box" data-kind="on_off"><strong data-i18n="kind.on_off">On / Off</strong></div>
@@ -315,8 +320,8 @@
       "wizard.catalog.skipBrand": "Passer cette étape (recherche générique 433MHz)",
       "wizard.catalog.skipBrandHelp": "À utiliser si vous ne connaissez ni la marque ni le protocole : l'écoute captera toute trame 433MHz, sans filtrage. Moins précis, en dernier recours.",
       "wizard.catalog.multiProtocol": "Plusieurs protocoles disponibles pour cette marque :",
-      "wizard.catalog.rollingCodeBranchA": "Protocole à code tournant : l'écoute RF réelle est fortement recommandée pour ce protocole.",
-      "wizard.catalog.rollingCodeBranchB": "Protocole à code tournant : sans télécommande, l'ajout risque d'échouer (voir avertissement à la confirmation).",
+      "wizard.catalog.rollingCodeBranchA": "⚠️ Développement en cours : la synchronisation des protocoles à code tournant n'est pas encore fonctionnelle. L'inclusion de cet appareil sera probablement incomplète (commandes qui échouent, resynchronisation manuelle nécessaire).",
+      "wizard.catalog.rollingCodeBranchB": "⚠️ Développement en cours : la synchronisation des protocoles à code tournant n'est pas encore fonctionnelle. Sans télécommande, l'ajout de cet appareil échouera probablement ou restera incomplet (voir l'avertissement à la confirmation).",
 
       "wizard.listen.title": "Écoute radio",
       "wizard.listen.instructions": "Sur votre télécommande d'origine, appuyez sur le bouton à copier pendant quelques secondes, dès que vous lancez l'écoute ci-dessous. Répétez l'appui 2 ou 3 fois si rien n'apparaît.",
@@ -417,8 +422,8 @@
       "wizard.catalog.skipBrand": "Skip this step (generic 433MHz search)",
       "wizard.catalog.skipBrandHelp": "Use this if you know neither the brand nor the protocol: listening will capture any 433MHz signal, unfiltered. Less precise, last resort.",
       "wizard.catalog.multiProtocol": "Several protocols are available for this brand:",
-      "wizard.catalog.rollingCodeBranchA": "Rolling-code protocol: real RF listening is strongly recommended for this protocol.",
-      "wizard.catalog.rollingCodeBranchB": "Rolling-code protocol: without the remote, adding it may fail (see warning at confirmation).",
+      "wizard.catalog.rollingCodeBranchA": "⚠️ Under active development: rolling-code counter synchronization does not work yet. Including this device will likely be incomplete (commands may fail, manual resync may be required).",
+      "wizard.catalog.rollingCodeBranchB": "⚠️ Under active development: rolling-code counter synchronization does not work yet. Without the remote, adding this device will likely fail or remain incomplete (see the warning at confirmation).",
 
       "wizard.listen.title": "RF listening",
       "wizard.listen.instructions": "On your original remote, press the button to copy for a few seconds as soon as you start listening below. Repeat 2 or 3 times if nothing appears.",
@@ -568,6 +573,7 @@
     candidate: null,
     kind: null,
     editingDevice: null,
+    rollingCodeRisk: false,
   };
 
   var boxesCache = [];
@@ -730,6 +736,7 @@
     state.sessionId = null;
     state.candidate = null;
     state.kind = null;
+    state.rollingCodeRisk = false;
     if (state.listenPoll) { clearInterval(state.listenPoll); state.listenPoll = null; }
     $("brand-input").value = "";
     $("brand-suggestions").innerHTML = "";
@@ -738,6 +745,7 @@
     $("protocol-choices").innerHTML = "";
     hide("protocol-picker");
     hide("rolling-code-banner");
+    hide("kind-rolling-banner");
     $("btn-catalog-next").disabled = true;
     $("manual-source").value = "";
     $("name-input").value = "";
@@ -847,6 +855,22 @@
     });
   }
 
+  function rollingCodeMessage() {
+    return state.branch === "B"
+      ? t("wizard.catalog.rollingCodeBranchB")
+      : t("wizard.catalog.rollingCodeBranchA");
+  }
+
+  function updateKindRollingBanner() {
+    var banner = $("kind-rolling-banner");
+    if (state.rollingCodeRisk) {
+      banner.textContent = rollingCodeMessage();
+      show(banner.id);
+    } else {
+      hide(banner.id);
+    }
+  }
+
   function applyProtocol(p) {
     if (!p) { $("btn-catalog-next").disabled = true; return; }
     state.channelId = p.channel_id;
@@ -854,14 +878,14 @@
     $("btn-catalog-next").disabled = false;
 
     api("api/channel/" + p.channel_id + "?box=" + encodeURIComponent(state.box)).then(function (res) {
+      state.rollingCodeRisk = !!(res.body && res.body.rolling_code_risk);
       var banner = $("rolling-code-banner");
-      if (res.body && res.body.rolling_code_risk) {
-        banner.textContent = state.branch === "B"
-          ? t("wizard.catalog.rollingCodeBranchB")
-          : t("wizard.catalog.rollingCodeBranchA");
-        show("rolling-code-banner");
+      banner.classList.add("rolling-wip");
+      if (state.rollingCodeRisk) {
+        banner.textContent = rollingCodeMessage();
+        show(banner.id);
       } else {
-        hide("rolling-code-banner");
+        hide(banner.id);
       }
     });
   }
@@ -930,7 +954,11 @@
       btn.addEventListener("click", function () {
         state.candidate = c;
         if (state.listenPoll) { clearInterval(state.listenPoll); state.listenPoll = null; }
-        showOnly(["step-kind"]);
+        api("api/channel/" + c.channel_id + "?box=" + encodeURIComponent(state.box)).then(function (res) {
+          state.rollingCodeRisk = !!(res.body && res.body.rolling_code_risk);
+          showOnly(["step-kind"]);
+          updateKindRollingBanner();
+        });
       });
       row.appendChild(btn);
       box.appendChild(row);
@@ -943,6 +971,7 @@
     if (Number.isNaN(val)) { return; }
     state.candidate = { channel_id: state.channelId, channel_source: val, protocol_name: state.protocolName };
     showOnly(["step-kind"]);
+    updateKindRollingBanner();
   });
 
 
@@ -1018,7 +1047,7 @@
       body: JSON.stringify(payload),
     }).then(function (res) {
       if (res.status === 409 && res.body.warning === "rolling_code_risk") {
-        banner.className = "banner warn";
+        banner.className = "banner warn rolling-wip";
         banner.textContent = res.body.message;
         show(banner.id);
         var retryBtn = document.createElement("button");
